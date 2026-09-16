@@ -1,0 +1,32 @@
+# Secrets / lokal — niemals committen
+.env
+certs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tool-Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.pyrepl/
+
+# Build-Artefakte
+dist/
+build/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Editor swap/Backup-Dateien
+.*.swp
+.*.swo

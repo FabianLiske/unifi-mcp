@@ -80,6 +80,7 @@ Status: `open` (API-Key noch offen)
 ### WP-3 — Config & Observability
 
 `config.py`: alle Env-Vars aus Design-Doc §6 (Validierung, Defaults, Feature Flags `ENABLE_WRITE_TOOLS` / `ENABLE_DELETE_TOOLS` / `ENABLE_ACTION_TOOLS` = false), TLS-Settings: `UNIFI_TLS_MODE=strict|extract-once|insecure` (Default `extract-once`) + `UNIFI_CA_BUNDLE` (nur für `strict`); `UNIFI_VERIFY_TLS` aus dem Design-Doc wird durch `UNIFI_TLS_MODE` ersetzt (Abweichung von §6).
+Lade-Logik: `pydantic-settings` — echte Umgebungsvariablen überschreiben Werte aus `.env`. Lokale Entwicklung über `.env` (gitignored, Vorlage `.env.example`); Produktion (Compose/K8s) liefert dieselben Namen via `env_file:` bzw. ConfigMap+Secret.
 `observability/logging.py`: JSON-Logs mit `request_id`, keine Secrets.
 `observability/metrics.py`: prometheus-client-Skeleton.
 
