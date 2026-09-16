@@ -89,8 +89,8 @@ Top-level (nicht site-scoped): `/info`, `/sites`, `/pending-devices`,
 | get_network_client | `/sites/{site}/networks/{id}/clients` | |
 | list_wifi_bssids | `/sites/{site}/wifi/broadcasts` | |
 | get_wlan_settings | `/sites/{site}/wifi/broadcasts/{id}` | ⚠️ enthält Klartext-PSK |
-| list_acl_rules | `/sites/{site}/acl/rules` | |
-| get_acl_rule | `/sites/{site}/acl/rules/{id}` | `sourceFilter/destinationFilter.{type,networkIds[]}` |
+| list_acl_rules | `/sites/{site}/acl-rules` | ⚠️ `acl/rules` → 404, korrekt ist `acl-rules` (WP-4, live: 8 Regeln) |
+| get_acl_rule | `/sites/{site}/acl-rules/{id}` | `sourceFilter/destinationFilter.{type,networkIds[]}` |
 | list_firewall_policies | `/sites/{site}/firewall/policies` | ⚠️ 400 not-configured |
 | get_firewall_policy | `/sites/{site}/firewall/policies/{id}` | ⚠️ 400 not-configured |
 | list_device_tags | `/sites/{site}/device-tags` | (leer) |

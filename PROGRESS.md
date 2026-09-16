@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-16 (WP-0 … WP-3 done)
+Stand: 2026-09-16 (WP-0 … WP-6 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -31,9 +31,9 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-1  | Scaffolding & Toolchain                | 0        | done        | —         |
 | WP-2  | UniFi-API-Discovery                    | 0        | done        | —         |
 | WP-3  | Config & Observability                 | 1        | done        | WP-1      |
-| WP-4  | UniFi-Client-Kern                      | 1        | open        | WP-2, WP-3|
-| WP-5  | Normalisierung, Redaction, Limits      | 1        | open        | WP-4      |
-| WP-6  | MCP-Server-Gerüst + Auth               | 1        | open        | WP-3–5    |
+| WP-4  | UniFi-Client-Kern                      | 1        | done        | WP-2, WP-3|
+| WP-5  | Normalisierung, Redaction, Limits    | 1        | done        | WP-4      |
+| WP-6  | MCP-Server-Gerüst + Auth               | 1        | done        | WP-3–5    |
 | WP-7  | Tool-Framework + System/Sites/Devices  | 2        | open        | WP-6      |
 | WP-8  | Clients + inspect_client_path          | 2        | open        | WP-7      |
 | WP-9  | Networks / WiFi / Firewall             | 2        | open        | WP-7      |
@@ -126,7 +126,25 @@ TLS-Bootstrap: `extract-once` — einmaliger unverifizierter Handshake (stdlib `
 
 Abnahme: Client-Unit-Tests §35 (Auth-Header, Timeout, 401/403/404/429/5xx, Retry nur transient) + Unit-Tests für alle drei TLS-Modi (lokaler Test-Server mit selbstsigniertem Cert).
 
-Status: `open`
+- [x] `unifi/errors.py`: `UniFiError(status_code, api_code, message)` + 7 Subklassen (401/403/404/409/429+retry_after/400/5xx+Conn/Timeout) + `UniFiResponseTooLargeError`
+- [x] `unifi/models.py`: `Page` (Envelope, `totalCount`-Alias) + `ApplicationInfo`
+- [x] `unifi/tls.py` (neue Datei, bewusste Abweichung von §5): `bootstrap_extract_once()` (stdlib-ssl via `asyncio.to_thread`, SHA-256-Fingerprint) + `build_verify()` für alle drei Modi
+- [x] `unifi/client.py`: `UniFiClient.create(settings)` (extract-once-Bootstrap vor Client-Erstellung, Fingerprint prominent als WARNING), genau ein wiederverwendeter `AsyncClient` (Base-Path `/proxy/network/integration/v1`, `X-API-Key`, explizite Timeouts, `httpx.Limits`-Pooling)
+- [x] Retry nur transient (5xx, Connect-/Timeout-Fehler, 429 mit `Retry-After`, Backoff 0.5·2ⁿ cap 8s, Backoff-Basis injizierbar); 400/401/403/404/409 sofort gemappt ohne Retry
+- [x] Error-Mapping inkl. UniFi-Error-Code (`code` aus Envelope); API-Key/Authorization nie in Logs (getestet)
+- [x] Response-Size-Cap: Content-Length-Prüfung + Streaming-Count, Cap = `MAX_TOOL_RESPONSE_BYTES`, keine Retries
+- [x] Metriken `record_unifi_request` pro Request (bounded labels), Debug-Logs ohne Headers
+- [x] `unifi/capabilities.py`: `detect_capabilities()` — Kern `/info` hart (Fehler → Raise), optional: sites/devices/clients/networks/wifi/firewall/acl/traffic_matching_lists per `?limit=1`-Probe; `ok|not_configured|unavailable|error`; fehlende `UNIFI_SITE_ID` → erste Site aus `/sites`
+- [x] Client-Unit-Tests (respx): Auth-Header, Base-Path, Timeouts, 400/401/403/404/409, 429 (Retry+`Retry-After`), 5xx-Retries, ConnectError/ReadTimeout-Retries, „nicht transient wird nicht geretryt“, Size-Cap, malformed JSON, keine Secrets in Logs
+- [x] TLS-Tests gegen lokalen asyncio-TLS-Server mit selbstsigniertem Cert (nur DNS-SANs, wie reales Gateway; `cryptography` als neue dev-Dependency): extract-once (Pinning + Fingerprint-Log + verifizierte Session), strict (richtiges CA ok / falsches CA fail), insecure (ok + Warning), `http://` ohne TLS, Bootstrap-Fehler → klares `UnavailableError`
+- [x] Capability-Tests (respx): alle ok, firewall `not-configured`, 404 → `unavailable`, Auth-Fehler → `unavailable`, Site-Auswahl, Sites-Fehlschlag → Kaskade, Kern-Fehler → Raise
+- [x] Live-Verifikation gegen echtes Gateway: extract-once-Fingerprint `db27…45` stimmt mit `openssl x509 -fingerprint -sha256` überein; `/info` 10.6.101; alle Kategorien `ok`, firewall korrekt `not_configured`
+- [x] Abweichung: TLS mit `check_hostname=False` (live belegt: Gateway-Cert hat keine SAN für LAN-IP `172.26.1.1`; Chain-Verifikation/Cert-Pinning bleibt wirksam; einmaliges WARNING-Log)
+- [x] Abweichung: `UNIFI_SITE_ID=` (leer) wird zu `None` normalisiert (sonst bricht site-scoped Probing mit `/sites//…` ab) — `config.py` + Test
+- [x] Abweichung: korrekter ACL-Pfad ist `/sites/{site}/acl-rules` (nicht `acl/rules` → 404); `docs/unifi-api-notes.md` korrigiert
+- [x] lokal: ruff + mypy strict + pytest (61 Tests) grün
+
+Status: `done`
 
 ### WP-5 — Normalisierung, Redaction, Limits
 
@@ -137,7 +155,16 @@ Hartes Response-Size-Limit (`response_too_large`-Fehler), strukturierte LLM-Fehl
 
 Abnahme: Redaction-, Pagination- und Size-Tests.
 
-Status: `open`
+- [x] `safety/redaction.py`: `redact()` rekursiv (Dicts+Listen), Key-Normalisierung (lowercase, `_`/`-` gestrippt → `apiKey`/`api_key`/`API-Key` gleich), Exact-Liste §8 + `preSharedKey`; Suffix-Regel für vorangestellte Varianten (`wpaPsk`, `x_passphrase`, `clientSecret`, `accessToken`); Wert → `[REDACTED]`, Key bleibt sichtbar; Input wird nicht mutiert
+- [x] `unifi/normalization.py`: `INTERNAL_FIELDS` = {metadata, etag, revision} rekursiv entfernen; `normalize(level="detail"|"summary")` — detail: intern+Secrets, sonst komplett; summary: zusätzlich Depth-Pruning (Container tiefer als `max_depth`=1 → `…`, Skalare/Scalar-Listen bleiben); Redaction ohne Opt-out
+- [x] Pagination: `clamp_limit()` (None/≤0 → 50, >max → 200), `page_to_mcp()` → `{items, count, total_count, next_offset}` (`next_offset` = Offset der nächsten Seite, `None` auf letzter Seite)
+- [x] `tools/errors.py`: strukturierte LLM-Fehler `ToolError`/`NotFoundError`/`AmbiguousMatchError`/`ResponseTooLargeError` mit `to_dict()` (Code zuerst, Message zuletzt, §30) + `check_response_size()` (kompaktes JSON, UTF-8-Bytes, > Limit → `response_too_large`)
+- [x] Exports: `safety`/`unifi`/`tools` `__init__.py`
+- [x] Unit-Tests: Redaction (case-insensitive-Matrix, verschachtelt, echter WiFi-Pfad, keine Mutation), Normalisierung (intern entfernen, detail/summary, Pruning, keine Mutation), Pagination (Default/Max-Cap, next_offset, Item-Normalisierung), Size (Bytes, UTF-8, Grenze, Raise)
+- [x] Live-Verifikation: echtes WiFi-Broadcast-Detail → `securityConfiguration.passphrase` wird `[REDACTED]`, roher PSK taucht im normalisierten Output **nicht** auf
+- [x] lokal: ruff + mypy strict + pytest (98 Tests) grün
+
+Status: `done`
 
 ### WP-6 — MCP-Server-Gerüst + Auth
 
@@ -147,7 +174,16 @@ Status: `open`
 
 Abnahme: Contract-Test — initialize, `tools/list`, 401 ohne Token, keine Write-Tools sichtbar.
 
-Status: `open`
+- [x] **Entdeckung:** Installiertes `mcp` ist **2.x** (nicht 1.x) — API geändert: `FastMCP`→`MCPServer` (`mcp.server.mcpserver`), `list_tools()`/`initialize()` sind Coroutines, `InitializeResult` nutzt snake_case (`server_info`), `streamable_http_app(stateless_http=True)`, Custom-Routes via `@server.custom_route(...)` (per SDK-Doku auth-exempt → passt für Health)
+- [x] `server.py`: `MCPServer` (name/title/description/`instructions` §32/version), `ReadinessProbe` (30 s-Cache, injektierbare Clock), `/healthz`+`/readyz` als Custom-Routes, `mcp_starlette()` = stateless Streamable HTTP unter `/mcp`
+- [x] `auth/middleware.py`: reines ASGI-Middleware, konstant-zeitiger `hmac.compare_digest`, 401 (fehlend) / 403 (falsch), `record_auth_failure()`-Metrik, request-id pro Request, `/mcp` geschützt, Health-Endpoints bewusst öffentlich (K8s-Probes, keine Secrets — dokumentiert)
+- [x] `tools/registry.py`: `ToolGroup(name, gate, register)` + `register_tools()` — Gating auf **Registrierungszeit** (aus → fehlt in `tools/list`), `TOOL_GROUPS` im WP-6-Gerüst leer (ab WP-7 gefüllt)
+- [x] `app.py`: `create_app(settings, client)` (Client wird vom Caller erzeugt/geschlossen → testbar ohne TLS), `main()`-Runner (Config → Client → uvicorn → aclose)
+- [x] Contract-Test (in-process ASGI + MCP-Client): initialize (`server_info.name=unifi-mcp`, instructions), `tools/list` (leer, keine Write-Tools), 401 ohne Token, 403 falsches Token, `/healthz`+`/readyz` öffentlich; eigenes `asgi_lifespan`-Helper (ASGITransport läuft keinen lifespan → Session-Manager startet sonst nie; App läuft in einer Task, damit der interne Task-Group nicht Setup/Teardown-Tasks spannt)
+- [x] **Live-Smoke** (echtes Gateway + uvicorn): healthz 200, readyz 200 (`applicationVersion=10.6.101`), 401/403 korrekt, MCP-Handshake OK, 0 Tools (erwartet im Gerüst)
+- [x] lokal: ruff + mypy strict (21 Dateien) + pytest (116 Tests) grün
+
+Status: `done`
 
 ## Phase 2 — Read-only Tools
 
@@ -251,7 +287,7 @@ Status: `open`
 
 ### Server-seitig (dieses Repo)
 
-- [ ] offizieller lokaler UniFi Network API Client funktioniert
+- [x] offizieller lokaler UniFi Network API Client funktioniert (WP-4, live gegen 10.6.101 verifiziert)
 - [ ] keine Legacy-/undokumentierten Endpunkte
 - [ ] Streamable HTTP `/mcp` funktioniert, stateless
 - [ ] MCP-Upstream-Auth (Bearer) funktioniert

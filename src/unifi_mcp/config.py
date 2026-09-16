@@ -61,6 +61,15 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return url
 
+    @field_validator("unifi_site_id")
+    @classmethod
+    def _empty_site_id_to_none(cls, value: str | None) -> str | None:
+        # `UNIFI_SITE_ID=` (empty) means "no explicit site", not an
+        # empty site id that would build broken site-scoped URLs.
+        if value is not None and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def _check_tls(self) -> Settings:
         if self.unifi_tls_mode == "strict" and self.unifi_ca_bundle is None:

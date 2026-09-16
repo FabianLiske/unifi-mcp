@@ -45,6 +45,12 @@ def test_base_url_strips_trailing_slash(clean_env) -> None:
     assert s.unifi_base_url == "https://172.26.1.1"
 
 
+def test_empty_site_id_becomes_none(clean_env) -> None:
+    assert _settings(unifi_site_id="").unifi_site_id is None
+    assert _settings(unifi_site_id="   ").unifi_site_id is None
+    assert _settings(unifi_site_id="abc-123").unifi_site_id == "abc-123"
+
+
 def test_base_url_requires_http_scheme(clean_env) -> None:
     with pytest.raises(ValidationError):
         _settings(unifi_base_url="172.26.1.1")
