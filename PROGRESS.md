@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-16 (WP-0 … WP-2 done)
+Stand: 2026-09-16 (WP-0 … WP-3 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -30,7 +30,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-0  | Repo-Setup (Remote, Push)              | 0        | done        | —         |
 | WP-1  | Scaffolding & Toolchain                | 0        | done        | —         |
 | WP-2  | UniFi-API-Discovery                    | 0        | done        | —         |
-| WP-3  | Config & Observability                 | 1        | open        | WP-1      |
+| WP-3  | Config & Observability                 | 1        | done        | WP-1      |
 | WP-4  | UniFi-Client-Kern                      | 1        | open        | WP-2, WP-3|
 | WP-5  | Normalisierung, Redaction, Limits      | 1        | open        | WP-4      |
 | WP-6  | MCP-Server-Gerüst + Auth               | 1        | open        | WP-3–5    |
@@ -105,7 +105,17 @@ Lade-Logik: `pydantic-settings` — echte Umgebungsvariablen überschreiben Wert
 
 Abnahme: Unit-Tests für Parsing, Validierung, Flags.
 
-Status: `open`
+- [x] `config.py`: `Settings` (pydantic-settings), alle Env-Vars, Validierung, Defaults; `get_settings()` mit Cache
+- [x] TLS: `unifi_tls_mode` (strict/extract-once/insecure, Default `extract-once`) + `unifi_ca_bundle` (Pflicht bei `strict`)
+- [x] Feature-Flags `enable_write/action/delete_tools` = `false`
+- [x] `SecretStr` für API-Key + MCP-Token (nie in Logs/Reprs)
+- [x] `observability/logging.py`: structlog JSON/text, `request_id` (ContextVar), Secret-Redaction
+- [x] `observability/metrics.py`: prometheus-Skeleton (6 Metriken, begrenzte Labels)
+- [x] Unit-Tests: config (12), logging (6), metrics (5); `tests/conftest.py` (`clean_env`)
+- [x] `MCP_BIND_HOST`-Default `0.0.0.0` (Design-Doc) + `.env.example` angeglichen
+- [x] lokal: ruff + mypy strict + pytest (23 Tests) grün
+
+Status: `done`
 
 ### WP-4 — UniFi-Client-Kern
 
