@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-16 (Erstellung)
+Stand: 2026-09-16 (WP-0 … WP-2 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -27,9 +27,9 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 
 | WP    | Titel                                  | Phase    | Status      | Deps      |
 | ----- | -------------------------------------- | -------- | ----------- | --------- |
-| WP-0  | Repo-Setup (Remote, Push)              | 0        | in_progress | —         |
-| WP-1  | Scaffolding & Toolchain                | 0        | open        | —         |
-| WP-2  | UniFi-API-Discovery                    | 0        | open        | —         |
+| WP-0  | Repo-Setup (Remote, Push)              | 0        | done        | —         |
+| WP-1  | Scaffolding & Toolchain                | 0        | done        | —         |
+| WP-2  | UniFi-API-Discovery                    | 0        | done        | —         |
 | WP-3  | Config & Observability                 | 1        | open        | WP-1      |
 | WP-4  | UniFi-Client-Kern                      | 1        | open        | WP-2, WP-3|
 | WP-5  | Normalisierung, Redaction, Limits      | 1        | open        | WP-4      |
@@ -54,10 +54,10 @@ Parallelisierbar: WP-1 ∥ WP-2 · WP-8 ∥ WP-9 ∥ WP-10 · WP-11 ab WP-6.
 
 Remote `origin` auf `git@github.com:FabianLiske/unifi-mcp.git` setzen, Design-Doc + dieses Tracking-Doc pushen.
 
-- [ ] remote gesetzt
-- [ ] initialer Push
+- [x] remote gesetzt
+- [x] initialer Push
 
-Status: `in_progress`
+Status: `done`
 
 ### WP-1 — Scaffolding & Toolchain
 
@@ -65,7 +65,14 @@ uv-Projekt (Python ≥ 3.12), `src/unifi_mcp/`-Layout laut Design-Doc §5 (ohne 
 
 Abnahme: `uv sync`, `uv run ruff check`, `uv run pytest` grün; CI grün.
 
-Status: `open`
+- [x] uv-Projekt (Python 3.12), `src/unifi_mcp/`-Layout (Pakete `auth/ unifi/ tools/ safety/ observability/`)
+- [x] `pyproject.toml` (hatchling, ruff Lint+Format, mypy strict, pytest-asyncio), `uv.lock`
+- [x] `.gitignore`, `.dockerignore`, `.python-version`
+- [x] `.github/workflows/ci.yaml` (uv sync → ruff check → ruff format --check → mypy → pytest)
+- [x] Smoke-Test `tests/unit/test_smoke.py`
+- [x] lokal: `uv sync` + ruff check + ruff format --check + mypy + pytest grün
+
+Status: `done` (CI-Run in GitHub nach Push verifizieren)
 
 ### WP-2 — UniFi-API-Discovery
 
@@ -73,7 +80,19 @@ Gegen das lokale Cloud Gateway: Network-Version + passende API-Doku/OpenAPI erfa
 
 Deliverables: `docs/unifi-api-notes.md` (bestätigte Endpunkte, Beispielantworten, Secrets redigiert) + (optional) `certs/gateway.crt`.
 
-Status: `open` (API-Key noch offen)
+- [x] Base URL + Auth (`X-API-Key`) verifiziert
+- [x] Envelope/Pagination (default limit 25, max 200) verifiziert
+- [x] Filter-DSL (funktionsbasiert: `field.fn(...)`, `and/or/not`, `like`) live verifiziert
+- [x] Enum-Werte sind UPPERCASE (`ONLINE`, `WIRED`, `WIRELESS`) — Normalisierung notiert
+- [x] Endpoint-Mapping + Referenz-Resources verifiziert
+- [x] ⚠️ `firewall/zones` + `firewall/policies` → 400 `not-configured` → `unsupported`
+- [x] ⚠️ `wifi/broadcasts/{id}` enthält Klartext-PSK → Redaction notiert
+- [x] ⚠️ Versionsdrift 10.4.57 (Referenz) vs. 10.6.101 (installiert) dokumentiert
+- [x] Referenz-OpenAPI → `docs/reference/network-openapi-10.4.57.json`
+- [x] Gateway-Cert extrahiert → `certs/gateway.crt` (gitignored)
+- [x] `docs/unifi-api-notes.md` geschrieben
+
+Status: `done`
 
 ## Phase 1 — Kern
 
@@ -213,7 +232,7 @@ Status: `open`
 ## Offene Punkte
 
 - [x] TLS zum Gateway: entschieden — `UNIFI_TLS_MODE=strict|extract-once|insecure` (Default `extract-once`); `strict` per CA-Bundle (SOPS-Secret im Deploy-Repo, falls gepinnt werden soll), `insecure` nur lokale Dev
-- [ ] Read-only/minimal privilegierten API-Key im Gateway anlegen (Design-Doc §43)
+- [x] API-Key vorhanden — **aber voller Admin** (keine pro-Key-Scopes); Read-only nur server-seitig. Empfehlung: view-only Admin (Details: `docs/unifi-api-notes.md` §9)
 - [ ] SOPS/Flux im Deploy-Repo: Secrets für API-Key + MCP-Token (Cert-Secret nur bei `strict`)
 - [ ] GH-Actions: nur `linux/amd64` oder auch arm64? (Default-Annahme: amd64)
 - [ ] Design-Doc-Dateiname/-Titel sagt „Kubernetes", Deployment-Abschnitte betreffen aber das Deploy-Repo — evtl. im Doc vermerken

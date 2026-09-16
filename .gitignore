@@ -30,3 +30,6 @@ build/
 # Editor swap/Backup-Dateien
 .*.swp
 .*.swo
+
+# Temp
+workflow-example.yaml
