@@ -17,7 +17,7 @@ import json
 import ssl
 import time
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -38,6 +38,9 @@ from unifi_mcp.unifi.errors import (
     UniFiValidationError,
 )
 from unifi_mcp.unifi.models import ApplicationInfo, Page
+
+if TYPE_CHECKING:
+    from unifi_mcp.unifi.capabilities import CapabilityCache
 
 logger = get_logger(__name__)
 
@@ -136,6 +139,7 @@ class UniFiClient:
         self._settings = settings
         self._http = http
         self._backoff_base = backoff_base
+        self._capability_cache: CapabilityCache | None = None
 
     @classmethod
     async def create(cls, settings: Settings) -> UniFiClient:
@@ -176,6 +180,19 @@ class UniFiClient:
     @property
     def site_id(self) -> str | None:
         return self._settings.unifi_site_id
+
+    @property
+    def capability_cache(self) -> CapabilityCache:
+        """Per-client, TTL-cached capability detection (design §29).
+
+        Created lazily; the import stays inside the property because
+        :mod:`unifi_mcp.unifi.capabilities` imports this module.
+        """
+        if self._capability_cache is None:
+            from unifi_mcp.unifi.capabilities import CapabilityCache
+
+            self._capability_cache = CapabilityCache(self)
+        return self._capability_cache
 
     async def aclose(self) -> None:
         await self._http.aclose()

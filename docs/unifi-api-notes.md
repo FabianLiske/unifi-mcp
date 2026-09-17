@@ -54,6 +54,15 @@ Listen-Endpunkte liefern ein Paging-Envelope:
 Verifizierte Filter: `name.like('USW*')` (5 Devices), `name.like('*Gateway*')` (1),
 `type.eq('WIRELESS')` (21 Clients), `and(...)`-Kombinationen.
 
+WP-7 (live, 2026-09-17):
+
+- **Array-Filter:** `features.contains('switching')` → OK (6/6 Devices),
+  `features.contains('gateway')` → 0/0 (Syntax gültig).
+- **Enum-Prüfung:** `state.eq` validiert den Wert **nicht** — `state.eq('BOGUS')`
+  liefert 0/0 statt 400. Tool-seitige Allowlists sind trotzdem Pflicht.
+- `name.like('')` → 0/0 (leerer Term matcht nichts) → leere Suche wird
+  tool-seitig weggelassen.
+
 ### Wichtig: Enum-Werte sind UPPERCASE
 
 Die Design-Doc unterstellte lowercase. Das Gateway liefert **uppercase**:
@@ -105,6 +114,28 @@ Top-level (nicht site-scoped): `/info`, `/sites`, `/pending-devices`,
 Referenz-only-Resources (lesbar, nicht als MVP-Tools): `/countries` (248),
 `/dpi/applications` (2112), `/dpi/categories` (35), `/sites/{site}/radius/profiles` (2),
 `/sites/{site}/vpn/site-to-site` (0).
+
+## 5a. Devices — Felder und Feature-Drift (WP-7, live 2026-09-17)
+
+- List-Item (`GET /sites/{site}/devices`): `id, name, model, state, features[],
+  firmwareVersion, firmwareUpdatable, supported, ipAddress, macAddress,
+  interfaces[]`. `state` ist UPPERCASE (hier: alle 9 Geräte `ONLINE`).
+- `features` (List, API-10.4.57-Enum): `switching`, `accessPoint`, `gateway`.
+  Geräte melden **nur die Features, die sie tatsächlich anbieten**.
+- ⚠️ **UCG Ultra meldet nur `features: ["switching"]`** — es hat kein
+  `gateway`-Feature. `device_type=gateway` ist also auf dieser Deployment
+  leer (gültiger Filter, 0 Treffer). Gateway-Modell erkennen stattdessen
+  über `search`/`model` (z. B. `UCG Ultra`). In der `list_devices`-
+  Description dokumentiert.
+- ⚠️ **Schema-Drift List vs. Detail:** Im Detail-Objekt
+  (`GET /sites/{site}/devices/{id}`) ist `features` ein **Dict**
+  (`{"switching": {"lags": []}}`), in der Liste eine Liste. Normalisierung
+  (WP-5) behandelt beides; Detail-Tools (WP-7b/WP-8) müssen das kennen.
+  Ebenso `interfaces`: im **List**-Endpoint nur ein String-Liste mit
+  Kategorienamen (z. B. `["ports"]`, bei APs `["radios"]`), im Detail
+  vollständige Interface-Objekte. Die List-Fixture (`devices.json`) ist
+  auf die List-Form geschnitten.
+- `/pending-devices` (top-level): OK, liefert Envelope, hier 0 Einträge.
 
 ## 6. Zone-Based-Firewall nicht konfiguriert (⚠️)
 

@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-16 (WP-0 … WP-6 done)
+Stand: 2026-09-17 (WP-0 … WP-7 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -34,7 +34,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-4  | UniFi-Client-Kern                      | 1        | done        | WP-2, WP-3|
 | WP-5  | Normalisierung, Redaction, Limits    | 1        | done        | WP-4      |
 | WP-6  | MCP-Server-Gerüst + Auth               | 1        | done        | WP-3–5    |
-| WP-7  | Tool-Framework + System/Sites/Devices  | 2        | open        | WP-6      |
+| WP-7  | Tool-Framework + System/Sites/Devices  | 2        | done        | WP-6      |
 | WP-8  | Clients + inspect_client_path          | 2        | open        | WP-7      |
 | WP-9  | Networks / WiFi / Firewall             | 2        | open        | WP-7      |
 | WP-10 | ACL / Traffic / Reference              | 2        | open        | WP-7      |
@@ -190,11 +190,24 @@ Status: `done`
 ### WP-7 — Tool-Framework + System/Sites/Devices
 
 Gemeinsame Tool-Helper (Pagination, Limits, Error-Mapping), Tool-Description-Konvention (§31).
-Tools: `get_system_info`, `list_sites`, `list_devices` (Filter: site_id, device_type, state, search, limit).
+Tools: `get_system_info`, `list_sites`, `list_devices` (Filter: site_id, device_type, state, search, limit, offset).
 
 Abnahme: E2E gegen Fake-API; `get_system_info` liefert Version + Capabilities.
 
-Status: `open`
+- [x] `tools/common.py` (Framework): `wrap_tool` (Timing + `record_mcp_request` §28, Response-Size-Cap §12, Fehler-Mapping), `unifi_error_to_dict` (404→`not_found`, 401→`authentication`, 403→`authorization`, 400→`validation` / `not-configured`→`unsupported`, 429→`rate_limited`(+`retry_after`), 409→`conflict`, 5xx/Conn→`unavailable`, sonst `unifi_error`; unerwartete Exceptions → `internal_error`, Traceback nur server-seitig), `resolve_site` (Tool-Param → `UNIFI_SITE_ID` → erste Site aus `/sites` → sonst `not_found`), `site_overview`, `fetch_list` (Envelope → §12-MCP-Format, Summary-Normalisierung)
+- [x] Fehler-Konvention wie WP-5: Tool liefert Success- und Fehler-Paths beide als `dict` (structured output); `InvalidValueError` (code `validation`) für Allowlist-Verstöße neu in `tools/errors.py`
+- [x] `tools/system.py`: `get_system_info` → `{application_version, mcp_version, active_site{id,name}, capabilities}` (keine Secrets); Capabilities via neuem `client.capability_cache` (TTL 300 s, §29) — `detect_capabilities` war bis hierhin nie verdrahtet; Start-Detection in `app.main()` best-effort (Fehler → Warnlog, Server startet trotzdem, §3)
+- [x] `tools/sites.py`: `list_sites` → §12-Envelope, Items `{id, name}` (§10.2)
+- [x] `tools/devices.py`: `list_devices` (site_id, device_type, state, search, limit, offset); Filter-Builder mit Allowlists — `device_type`: switch/ap/access_point/gateway → `features.contains('switching'|'accessPoint'|'gateway')`, `state`: online/offline/pending → UPPERCASE `state.eq(...)`, `search` → `name.like('*…*')` (Quotes gestrippt, DSL hat kein Escaping), Komposition via `and(...)`; kein freier Filter-Passthrough
+- [x] **Live-Verifikation (WP-7):** `features.contains('switching')` OK (6/6), `state.eq('ONLINE')` OK, `and(...)`-Kombis OK; `state.eq` akzeptiert auch unbekannte Enums (0/0, kein 400) → `pending→PENDING` sicher; ⚠️ UCG Ultra meldet nur `features=["switching"]` (kein `gateway`) → in Tool-Description dokumentiert; ⚠️ Schema-Drift List vs. Detail: `features` ist Dict im Detail / Liste in der Liste, `interfaces` String-Liste (`["ports"]`/`["radios"]`) im List-Endpoint / Objekte im Detail → notiert, List-Fixture auf List-Form geschnitten
+- [x] Tool-Descriptions nach §31 + `title` + `ToolAnnotations(read_only_hint=True)`; Registration über `ToolGroup`s in `TOOL_GROUPS` (Gating bei Registrierung bleibt WP-6-Mechanik)
+- [x] Unit-Tests: Error-Mapping (alle Codes + api_code/retry_after), wrap_tool (Metrics, ToolError, UniFiError, Crash→internal_error ohne Leak, Size-Cap, Schema bleibt via `functools.wraps`), resolve_site/site_overview (Precedence, Fallbacks), Filter-Builder (Alias-Matrix, Kombis, Invalid-Werte), clamp_params
+- [x] E2E (Abnahme) gegen Fake-API (Fixtures `application_info/sites/devices.json` aus Live-Daten, redigiert) über echte `/mcp`-Streamable-HTTP-Session: tools/list exakt die 3 Tools + read-only-hints; `get_system_info` (Version 10.6.101 + Capabilities inkl. `firewall: not_configured`); `list_sites` (Envelope + Projektion); `list_devices` (Summary-Pruning `interfaces→["…"]`, Default limit 50/offset 0, Filter-Expression im Request verifiziert, Limit-Cap 200, `validation`-Fehler, `not_found` bei unbekannter Site, `unavailable` bei 503, `response_too_large` bei kleinem Cap)
+- [x] Contract-Test: `tools/list` → exakt `{get_system_info, list_sites, list_devices}` + read-only-hints
+- [x] Abweichung: `mcp-types` (2.2.0) als direkte Dependency ergänzt (canonical Import für `ToolAnnotations`; war nur Transitiv-Dep), `mcp`-Lower-Bound auf `>=2.2.0` erhöht (Code nutzt 2.x-API)
+- [x] Lokal: ruff + mypy strict (25 Dateien) + pytest (156 Tests) grün
+
+Status: `done`
 
 ### WP-8 — Clients + inspect_client_path
 

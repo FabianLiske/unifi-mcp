@@ -44,6 +44,16 @@ async def main() -> None:
     app_logging.setup_logging(settings.log_level, settings.log_format)
     client = await UniFiClient.create(settings)
     try:
+        # Startup capability check (design §3): best-effort. A failure only
+        # logs a warning — the server still starts and reports the degraded
+        # state via /readyz and get_system_info.
+        try:
+            await client.capability_cache.get()
+        except Exception as exc:  # noqa: BLE001 - startup detection is best-effort
+            app_logging.get_logger(__name__).warning(
+                "startup capability detection failed (server starts anyway)",
+                error=f"{type(exc).__name__}: {exc}",
+            )
         app = create_app(settings, client=client)
         config = uvicorn.Config(
             app,

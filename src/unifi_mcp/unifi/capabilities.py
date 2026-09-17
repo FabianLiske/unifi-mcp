@@ -9,6 +9,8 @@ their status, so tools can answer ``unsupported`` instead of a raw HTTP 400.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -27,6 +29,9 @@ from unifi_mcp.unifi.models import ApplicationInfo
 logger = get_logger(__name__)
 
 CapabilityState = Literal["ok", "not_configured", "unavailable", "error"]
+
+#: Cache TTL for application info / capabilities (design §29: 5 minutes).
+DEFAULT_CAPABILITY_TTL_SECONDS = 300.0
 
 # category -> probe path template (relative to /proxy/network/integration/v1)
 _SITE_SCOPED_PROBES: tuple[tuple[str, str], ...] = (
@@ -139,3 +144,38 @@ async def detect_capabilities(client: UniFiClient) -> Capabilities:
                 detail=cap.detail,
             )
     return Capabilities(application_info=application_info, categories=categories)
+
+
+class CapabilityCache:
+    """TTL cache around :func:`detect_capabilities` for one client (design §29).
+
+    The probe costs up to nine gateway requests (``/info`` + ``/sites`` + one
+    per category), so tools and the readiness path must not run it on every
+    call. Within the TTL the cached result is returned; on expiry it is
+    re-detected. A failed re-detection still raises — callers (tools) map
+    that to a structured error, and the server is expected to be healthy
+    when a core ``/info`` call succeeds.
+    """
+
+    def __init__(
+        self,
+        client: UniFiClient,
+        *,
+        ttl_seconds: float = DEFAULT_CAPABILITY_TTL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._client = client
+        self._ttl = ttl_seconds
+        self._clock = clock
+        self._cached: Capabilities | None = None
+        self._checked_at: float = -1.0
+
+    async def get(self) -> Capabilities:
+        """Return the cached capabilities, re-detecting after the TTL."""
+        now = self._clock()
+        if self._cached is not None and (now - self._checked_at) < self._ttl:
+            return self._cached
+        cached = await detect_capabilities(self._client)
+        self._cached = cached
+        self._checked_at = now
+        return cached

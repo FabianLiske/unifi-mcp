@@ -39,9 +39,15 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
 
         tools = await session.list_tools()
         names = [tool.name for tool in tools.tools]
+        # WP-7: exactly the read-only system/sites/device tools.
+        assert set(names) == {"get_system_info", "list_sites", "list_devices"}
         # Read-only MVP: no write/action/delete tool may be listed.
         forbidden = ("write", "update", "create", "delete", "restart", "cycle", "reconnect")
         assert not any(word in name for name in names for word in forbidden)
+        # Every read-only tool advertises the read-only hint (design §31).
+        for tool in tools.tools:
+            assert tool.annotations is not None
+            assert tool.annotations.read_only_hint is True
 
 
 async def test_healthz_public(mcp_app) -> None:

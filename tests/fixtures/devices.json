@@ -1,0 +1,76 @@
+{
+  "offset": 0,
+  "limit": 50,
+  "count": 4,
+  "totalCount": 4,
+  "data": [
+    {
+      "id": "dev-gateway",
+      "name": "Cloud Gateway Ultra",
+      "model": "UCG Ultra",
+      "state": "ONLINE",
+      "features": [
+        "switching"
+      ],
+      "firmwareVersion": "5.1.33",
+      "firmwareUpdatable": false,
+      "supported": true,
+      "ipAddress": "172.26.1.1",
+      "macAddress": "00:00:00:00:00:01",
+      "interfaces": [
+        "ports"
+      ]
+    },
+    {
+      "id": "dev-switch-1",
+      "name": "USW Pro 8 PoE",
+      "model": "USW Pro 8 PoE",
+      "state": "ONLINE",
+      "features": [
+        "switching"
+      ],
+      "firmwareVersion": "5.1.33",
+      "firmwareUpdatable": false,
+      "supported": true,
+      "ipAddress": "172.26.1.10",
+      "macAddress": "00:00:00:00:00:02",
+      "interfaces": [
+        "ports"
+      ]
+    },
+    {
+      "id": "dev-ap-1",
+      "name": "UAP AC Lite EG",
+      "model": "UAP-AC-Lite",
+      "state": "ONLINE",
+      "features": [
+        "accessPoint"
+      ],
+      "firmwareVersion": "5.1.33",
+      "firmwareUpdatable": true,
+      "supported": true,
+      "ipAddress": "172.26.1.11",
+      "macAddress": "00:00:00:00:00:03",
+      "interfaces": [
+        "radios"
+      ]
+    },
+    {
+      "id": "dev-switch-2",
+      "name": "USW Flex Mini Keller",
+      "model": "USW Flex Mini",
+      "state": "OFFLINE",
+      "features": [
+        "switching"
+      ],
+      "firmwareVersion": "5.1.33",
+      "firmwareUpdatable": false,
+      "supported": true,
+      "ipAddress": null,
+      "macAddress": "00:00:00:00:00:04",
+      "interfaces": [
+        "ports"
+      ]
+    }
+  ]
+}

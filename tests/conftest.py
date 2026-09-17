@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import anyio
@@ -17,6 +19,11 @@ from unifi_mcp.app import create_app
 from unifi_mcp.config import Settings
 from unifi_mcp.observability import logging as app_logging
 from unifi_mcp.unifi.client import UniFiClient, build_http_client
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+#: Paging envelope for list endpoints that return no items (capability probes).
+EMPTY_PAGE: dict[str, Any] = {"offset": 0, "limit": 1, "count": 0, "totalCount": 0, "data": []}
 
 ENV_KEYS = (
     "UNIFI_BASE_URL",
@@ -46,6 +53,16 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     return monkeypatch
+
+
+@pytest.fixture
+def load_fixture():
+    """Load a JSON fixture from tests/fixtures/."""
+
+    def _load(name: str) -> Any:
+        return json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
+
+    return _load
 
 
 @pytest.fixture(autouse=True)
@@ -141,6 +158,59 @@ async def asgi_lifespan(app: Any) -> AsyncIterator[None]:
                 app_task.cancel()
         with contextlib.suppress(BaseException):
             await app_task
+
+
+class FakeUniFi:
+    """State of the mocked UniFi API: the site id plus every devices request."""
+
+    def __init__(self, site_id: str) -> None:
+        self.site_id = site_id
+        self.devices_requests: list[httpx.Request] = []
+
+
+@pytest.fixture
+def fake_unifi(respx_mock, load_fixture) -> FakeUniFi:
+    """Mock the fake UniFi API surface used by the WP-7 tools.
+
+    Returns a :class:`FakeUniFi` with the site id used for the site-scoped
+    routes and the captured ``/devices`` requests. ``GET /info`` may be
+    mocked additionally by :func:`mcp_app` — both mocks serve the same
+    application-info payload.
+    """
+    fake = FakeUniFi("site-default")
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/info").mock(
+        return_value=httpx.Response(200, json=load_fixture("application_info.json"))
+    )
+    respx_mock.get(f"{base}/sites").mock(
+        return_value=httpx.Response(200, json=load_fixture("sites.json"))
+    )
+
+    def _devices(request: httpx.Request) -> httpx.Response:
+        fake.devices_requests.append(request)
+        return httpx.Response(200, json=load_fixture("devices.json"))
+
+    respx_mock.get(f"{base}/sites/{fake.site_id}/devices").mock(side_effect=_devices)
+    for resource in (
+        "clients",
+        "networks",
+        "wifi/broadcasts",
+        "acl-rules",
+        "traffic-matching-lists",
+    ):
+        respx_mock.get(f"{base}/sites/{fake.site_id}/{resource}").mock(
+            return_value=httpx.Response(200, json=EMPTY_PAGE)
+        )
+    respx_mock.get(f"{base}/sites/{fake.site_id}/firewall/zones").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "code": "api.firewall.zone-based-firewall-not-configured",
+                "message": "Zone-based firewall is not configured.",
+            },
+        )
+    )
+    return fake
 
 
 @pytest.fixture

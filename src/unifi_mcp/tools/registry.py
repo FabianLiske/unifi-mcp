@@ -16,6 +16,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from unifi_mcp.tools.devices import register_device_tools
+from unifi_mcp.tools.sites import register_site_tools
+from unifi_mcp.tools.system import register_system_tools
+
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
@@ -58,8 +62,12 @@ def register_tools(
             group.register(server, client, settings)
 
 
-#: The tool groups registered by the server.
+#: The tool groups registered by the server (read-only MVP, WP-7).
 #:
-#: Empty in the WP-6 skeleton — the read-only tool groups (``get_system_info``,
-#: ``list_sites``, ``list_devices``, …) are added here from WP-7 onward.
-TOOL_GROUPS: tuple[ToolGroup, ...] = ()
+#: Write/action/delete groups (gated by their feature flags) are added from
+#: WP-13 onward and must stay absent while their flag is off.
+TOOL_GROUPS: tuple[ToolGroup, ...] = (
+    ToolGroup(name="system", gate=always_on, register=register_system_tools),
+    ToolGroup(name="sites", gate=always_on, register=register_site_tools),
+    ToolGroup(name="devices", gate=always_on, register=register_device_tools),
+)

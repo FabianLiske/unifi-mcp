@@ -55,6 +55,18 @@ class AmbiguousMatchError(ToolError):
         super().__init__(message or default, matches=matches)
 
 
+class InvalidValueError(ToolError):
+    """A tool argument is outside the allowed value set (allowlist)."""
+
+    code = "validation"
+
+    def __init__(
+        self, field: str, value: str, allowed: list[str], message: str | None = None
+    ) -> None:
+        default = f"Invalid value {value!r} for '{field}'. Allowed: {', '.join(allowed)}."
+        super().__init__(message or default, field=field, value=value, allowed=allowed)
+
+
 class ResponseTooLargeError(ToolError):
     """Tool output exceeded the hard response size limit (design §12)."""
 
