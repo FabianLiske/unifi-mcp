@@ -38,7 +38,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-8  | Clients + inspect_client_path          | 2        | done        | WP-7      |
 | WP-9  | Networks / WiFi / Firewall             | 2        | done        | WP-7      |
 | WP-10 | ACL / Traffic / Reference              | 2        | done        | WP-7      |
-| WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | open        | WP-6      |
+| WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | in_progress | WP-6      |
 | WP-12 | Tests, Smoke, README, DoD              | 3        | open        | WP-7–11   |
 | WP-13 | Safe-Writes-Fundament                  | post-MVP | open        | WP-12     |
 | WP-14 | Erste Write-Tools                      | post-MVP | open        | WP-13     |
@@ -265,12 +265,15 @@ Status: `done`
 
 ### WP-11 — Dockerfile + GitHub Actions (ghcr)
 
-Dockerfile: Multi-stage (uv-Build-Stage), schlankes Runtime-Image, non-root, gepinnte Dependencies, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, read-only root-FS-kompatibel, Healthcheck.
-GH-Actions: Build (buildx, `linux/amd64`) + Push auf **Tags** (`vX.Y.Z`) und **master** (SHA-Tag) → `ghcr.io/FabianLiske/unifi-mcp`, kein nacktes `latest`.
+Dockerfile (Multi-stage, uv-Build-Stage mit gepinntem `uv:0.12.15`, `uv sync --frozen --no-dev --no-editable` gegen `uv.lock`; Runtime `python:3.12-slim`, non-root uid 10001, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, read-only root-FS-kompatibel, Healthcheck via python-urllib gegen `/healthz`, ENTRYPOINT `unifi-mcp` als Console-Script, `src/unifi_mcp/cli.py`).
+GH-Actions (`.github/workflows/build-image.yaml`): Build (buildx, `linux/amd64,linux/arm64`, GHA-Cache) + Push auf **Tags** (`vX.Y.Z` → Semver-Tag) und **master** (SHA-Tag) → `ghcr.io/FabianLiske/unifi-mcp`, kein nacktes `latest`.
 
 Abnahme: Build lokal + in CI grün; `docker run` + `/healthz` OK.
 
-Status: `open`
+Umgesetzt: Dockerfile, Workflow, Console-Script. Builder-Logik + Entry-Point lokal verifiziert (simulierte Build-Dir, `/healthz` 200, `/mcp` 401/200, ruff/mypy/292 Tests grün).
+Noch ausstehend: `docker buildx build` (beide Arch) + `docker run`-Smoke + CI-Run grün (kein Docker-Daemon in dieser Umgebung).
+
+Status: `in_progress`
 
 ### WP-12 — Tests, Smoke, README, DoD
 
@@ -320,7 +323,7 @@ Status: `open`
 - [x] TLS zum Gateway: entschieden — `UNIFI_TLS_MODE=strict|extract-once|insecure` (Default `extract-once`); `strict` per CA-Bundle (SOPS-Secret im Deploy-Repo, falls gepinnt werden soll), `insecure` nur lokale Dev
 - [x] API-Key vorhanden — **aber voller Admin** (keine pro-Key-Scopes); Read-only nur server-seitig. Empfehlung: view-only Admin (Details: `docs/unifi-api-notes.md` §9)
 - [ ] SOPS/Flux im Deploy-Repo: Secrets für API-Key + MCP-Token (Cert-Secret nur bei `strict`)
-- [ ] GH-Actions: nur `linux/amd64` oder auch arm64? (Default-Annahme: amd64)
+- [x] GH-Actions: beide Architekturen — `linux/amd64,linux/arm64` (buildx-Cross-Build, Muster `workflow-example.yaml`)
 - [ ] Design-Doc-Dateiname/-Titel sagt „Kubernetes", Deployment-Abschnitte betreffen aber das Deploy-Repo — evtl. im Doc vermerken
 
 ## MVP Definition of Done (Referenz §47)
