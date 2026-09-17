@@ -7,55 +7,33 @@ normalized response``, over the real ``/mcp`` Streamable HTTP surface
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any
-
 import httpx
-import pytest
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
-from tests.conftest import asgi_lifespan
+from tests.conftest import asgi_lifespan, mcp_client_session
 from unifi_mcp.app import create_app
 
-_MCP_URL = "http://testserver/mcp"
-
-EXPECTED_TOOLS = {"get_system_info", "list_sites", "list_devices"}
-
-
-@asynccontextmanager
-async def _mcp_session(app: Any, token: str) -> AsyncIterator[ClientSession]:
-    """Authenticated MCP client session; enter/exit within one test task.
-
-    (An async generator fixture cannot be used here: pytest-asyncio runs
-    fixture teardown in a different task, which breaks the client's anyio
-    task groups — same reason ``asgi_lifespan`` drives the app in a task.)
-    """
-    headers = {"Authorization": f"Bearer {token}"}
-    http_client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), headers=headers)
-    async with AsyncExitStack() as stack:
-        await stack.enter_async_context(http_client)
-        read, write = await stack.enter_async_context(
-            streamable_http_client(_MCP_URL, http_client=http_client)
-        )
-        session = await stack.enter_async_context(ClientSession(read, write))
-        yield session
+EXPECTED_TOOLS = {
+    "get_system_info",
+    "list_sites",
+    "list_devices",
+    "list_clients",
+    "get_client",
+    "inspect_client_path",
+    "list_networks",
+    "get_network",
+    "list_wifi",
+    "get_wifi",
+    "list_firewall_zones",
+    "get_firewall_zone",
+    "list_acl_rules",
+    "get_acl_rule",
+    "list_traffic_matching_lists",
+    "get_traffic_matching_list",
+    "list_reference_resources",
+}
 
 
-@pytest.fixture
-def mcp_session(mcp_app, fake_unifi):
-    """Factory for MCP client sessions against the full app."""
-    app, settings = mcp_app
-    token = settings.mcp_auth_token.get_secret_value()
-
-    def _session() -> Any:
-        return _mcp_session(app, token)
-
-    return _session
-
-
-async def test_tools_list_contains_exactly_the_wp7_tools(mcp_session) -> None:
+async def test_tools_list_contains_exactly_the_readonly_mvp_tools(mcp_session) -> None:
     async with mcp_session() as session:
         tools = await session.list_tools()
     names = {tool.name for tool in tools.tools}
@@ -198,7 +176,7 @@ async def test_list_sites_response_too_large(
     client = await make_client(settings)
     app = create_app(settings, client=client)
     token = settings.mcp_auth_token.get_secret_value()
-    async with asgi_lifespan(app), _mcp_session(app, token) as session:
+    async with asgi_lifespan(app), mcp_client_session(app, token) as session:
         result = await session.call_tool("list_sites", {})
     payload = result.structured_content
     assert payload["error"] == "response_too_large"

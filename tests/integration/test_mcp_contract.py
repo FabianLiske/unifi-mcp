@@ -39,8 +39,27 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
 
         tools = await session.list_tools()
         names = [tool.name for tool in tools.tools]
-        # WP-7: exactly the read-only system/sites/device tools.
-        assert set(names) == {"get_system_info", "list_sites", "list_devices"}
+        # WP-7–10: exactly the read-only MVP toolset (10 groups).
+        assert set(names) == {
+            "get_system_info",
+            "list_sites",
+            "list_devices",
+            "list_clients",
+            "get_client",
+            "inspect_client_path",
+            "list_networks",
+            "get_network",
+            "list_wifi",
+            "get_wifi",
+            "list_firewall_zones",
+            "get_firewall_zone",
+            "list_acl_rules",
+            "get_acl_rule",
+            "list_traffic_matching_lists",
+            "get_traffic_matching_list",
+            "list_reference_resources",
+        }
+        assert len(names) == 17
         # Read-only MVP: no write/action/delete tool may be listed.
         forbidden = ("write", "update", "create", "delete", "restart", "cycle", "reconnect")
         assert not any(word in name for name in names for word in forbidden)

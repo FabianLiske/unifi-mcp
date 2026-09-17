@@ -15,7 +15,7 @@ client without a real TLS handshake.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from unifi_mcp.auth.middleware import BearerAuthMiddleware
 from unifi_mcp.config import Settings, get_settings
@@ -23,13 +23,24 @@ from unifi_mcp.observability import logging as app_logging
 from unifi_mcp.server import ReadinessProbe, build_server, mcp_starlette
 from unifi_mcp.unifi.client import UniFiClient
 
+if TYPE_CHECKING:
+    from unifi_mcp.tools.registry import ToolGroup
+
 ASGIApp = Callable[[dict[str, Any], Any, Any], Awaitable[None]]
 
 
-def create_app(settings: Settings, *, client: UniFiClient) -> ASGIApp:
-    """Assemble the final ASGI application around a ready *client*."""
+def create_app(
+    settings: Settings,
+    *,
+    client: UniFiClient,
+    groups: tuple[ToolGroup, ...] | None = None,
+) -> ASGIApp:
+    """Assemble the final ASGI application around a ready *client*.
+
+    *groups* overrides the default tool groups (see :func:`build_server`).
+    """
     readiness = ReadinessProbe(client)
-    server = build_server(settings, client, readiness)
+    server = build_server(settings, client, readiness, groups=groups)
     starlette_app = mcp_starlette(server, settings)
     return BearerAuthMiddleware(
         starlette_app, expected_token=settings.mcp_auth_token.get_secret_value()

@@ -16,9 +16,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from unifi_mcp.tools.acl import register_acl_tools
+from unifi_mcp.tools.clients import register_client_tools
 from unifi_mcp.tools.devices import register_device_tools
+from unifi_mcp.tools.firewall import register_firewall_tools
+from unifi_mcp.tools.networks import register_network_tools
+from unifi_mcp.tools.reference import register_reference_tools
 from unifi_mcp.tools.sites import register_site_tools
 from unifi_mcp.tools.system import register_system_tools
+from unifi_mcp.tools.traffic import register_traffic_tools
+from unifi_mcp.tools.wifi import register_wifi_tools
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -62,7 +69,7 @@ def register_tools(
             group.register(server, client, settings)
 
 
-#: The tool groups registered by the server (read-only MVP, WP-7).
+#: The tool groups registered by the server (read-only MVP, WP-7–10).
 #:
 #: Write/action/delete groups (gated by their feature flags) are added from
 #: WP-13 onward and must stay absent while their flag is off.
@@ -70,4 +77,11 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup(name="system", gate=always_on, register=register_system_tools),
     ToolGroup(name="sites", gate=always_on, register=register_site_tools),
     ToolGroup(name="devices", gate=always_on, register=register_device_tools),
+    ToolGroup(name="clients", gate=always_on, register=register_client_tools),
+    ToolGroup(name="networks", gate=always_on, register=register_network_tools),
+    ToolGroup(name="wifi", gate=always_on, register=register_wifi_tools),
+    ToolGroup(name="firewall", gate=always_on, register=register_firewall_tools),
+    ToolGroup(name="acl", gate=always_on, register=register_acl_tools),
+    ToolGroup(name="traffic", gate=always_on, register=register_traffic_tools),
+    ToolGroup(name="reference", gate=always_on, register=register_reference_tools),
 )

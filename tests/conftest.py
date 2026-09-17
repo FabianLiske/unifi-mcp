@@ -7,17 +7,20 @@ import contextlib
 import io
 import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import anyio
 import httpx
 import pytest
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
 from unifi_mcp.app import create_app
 from unifi_mcp.config import Settings
 from unifi_mcp.observability import logging as app_logging
+from unifi_mcp.tools.registry import ToolGroup
 from unifi_mcp.unifi.client import UniFiClient, build_http_client
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -214,17 +217,77 @@ def fake_unifi(respx_mock, load_fixture) -> FakeUniFi:
 
 
 @pytest.fixture
-async def mcp_app(respx_mock, make_client, make_settings):
-    """The full ASGI app (auth + MCP + health) with a pre-built client, lifespan running.
+def mcp_app_factory(respx_mock, make_client, make_settings):
+    """Factory for the full ASGI app (auth + MCP + health) with lifespan running.
 
     ``GET /info`` is mocked so ``/readyz`` resolves deterministically without a
-    real gateway.
+    real gateway. Pass *groups* to register a different (e.g. a single new)
+    tool group instead of the default :data:`~unifi_mcp.tools.registry.TOOL_GROUPS`.
+
+    Usage::
+
+        async with mcp_app_factory() as (app, settings): ...
+        async with mcp_app_factory(groups=TOOL_GROUPS + (my_group,)) as (app, settings): ...
     """
-    settings = make_settings()
-    client = await make_client(settings)
-    respx_mock.get("http://gateway.test/proxy/network/integration/v1/info").mock(
-        return_value=httpx.Response(200, json={"applicationVersion": "10.6.101"})
-    )
-    app = create_app(settings, client=client)
-    async with asgi_lifespan(app):
-        yield app, settings
+
+    @asynccontextmanager
+    async def _factory(
+        groups: tuple[ToolGroup, ...] | None = None,
+    ) -> AsyncIterator[tuple[Any, Settings]]:
+        settings = make_settings()
+        client = await make_client(settings)
+        respx_mock.get("http://gateway.test/proxy/network/integration/v1/info").mock(
+            return_value=httpx.Response(200, json={"applicationVersion": "10.6.101"})
+        )
+        app = create_app(settings, client=client, groups=groups)
+        async with asgi_lifespan(app):
+            yield app, settings
+
+    return _factory
+
+
+@pytest.fixture
+async def mcp_app(mcp_app_factory) -> AsyncIterator[tuple[Any, Settings]]:
+    """The full ASGI app with the default tool groups (see mcp_app_factory)."""
+    async with mcp_app_factory() as app:
+        yield app
+
+
+_MCP_URL = "http://testserver/mcp"
+
+
+@asynccontextmanager
+async def mcp_client_session(app: Any, token: str) -> AsyncIterator[ClientSession]:
+    """Authenticated MCP client session; enter/exit within one test task.
+
+    (An async generator fixture cannot be used here: pytest-asyncio runs
+    fixture teardown in a different task, which breaks the client's anyio
+    task groups — same reason :func:`asgi_lifespan` drives the app in a task.)
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    http_client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), headers=headers)
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(http_client)
+        read, write = await stack.enter_async_context(
+            streamable_http_client(_MCP_URL, http_client=http_client)
+        )
+        session = await stack.enter_async_context(ClientSession(read, write))
+        yield session
+
+
+@pytest.fixture
+def mcp_session(mcp_app, fake_unifi):
+    """Factory for MCP client sessions against the full default app.
+
+    Returns a zero-arg callable yielding an async context manager::
+
+        async with mcp_session() as session:
+            result = await session.call_tool("list_devices", {})
+    """
+    app, settings = mcp_app
+    token = settings.mcp_auth_token.get_secret_value()
+
+    def _session() -> Any:
+        return mcp_client_session(app, token)
+
+    return _session

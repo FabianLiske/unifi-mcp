@@ -1,0 +1,46 @@
+{
+  "offset": 0,
+  "limit": 50,
+  "count": 2,
+  "totalCount": 2,
+  "data": [
+    {
+      "id": "bc-iot",
+      "name": "ID-IoT",
+      "type": "IOT_OPTIMIZED",
+      "enabled": true,
+      "network": {
+        "type": "SPECIFIC",
+        "networkId": "net-iot"
+      },
+      "securityConfiguration": {
+        "type": "WPA2_PERSONAL",
+        "passphrase": "fixture-wifi-psk-12345678"
+      },
+      "metadata": {
+        "origin": "user"
+      }
+    },
+    {
+      "id": "bc-main",
+      "name": "UbiquitiAP",
+      "type": "STANDARD",
+      "enabled": true,
+      "broadcastingFrequenciesGHz": [
+        2.4,
+        5
+      ],
+      "network": {
+        "type": "SPECIFIC",
+        "networkId": "net-lan"
+      },
+      "securityConfiguration": {
+        "type": "WPA2_WPA3_PERSONAL",
+        "passphrase": "fixture-wifi-psk-87654321"
+      },
+      "metadata": {
+        "origin": "default"
+      }
+    }
+  ]
+}

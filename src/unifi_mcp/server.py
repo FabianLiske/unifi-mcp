@@ -26,6 +26,7 @@ from unifi_mcp.tools.registry import register_tools
 
 if TYPE_CHECKING:
     from unifi_mcp.config import Settings
+    from unifi_mcp.tools.registry import ToolGroup
     from unifi_mcp.unifi.client import UniFiClient
 
 
@@ -91,8 +92,18 @@ class ReadinessProbe:
         return ready, detail
 
 
-def build_server(settings: Settings, client: UniFiClient, readiness: ReadinessProbe) -> MCPServer:
-    """Construct the ``MCPServer`` with health routes and registered tools."""
+def build_server(
+    settings: Settings,
+    client: UniFiClient,
+    readiness: ReadinessProbe,
+    *,
+    groups: tuple[ToolGroup, ...] | None = None,
+) -> MCPServer:
+    """Construct the ``MCPServer`` with health routes and registered tools.
+
+    *groups* overrides the default :data:`~unifi_mcp.tools.registry.TOOL_GROUPS`
+    (used by tests to exercise individual tool groups without shipping them).
+    """
     server = MCPServer(
         name="unifi-mcp",
         title="UniFi Network MCP",
@@ -115,7 +126,7 @@ def build_server(settings: Settings, client: UniFiClient, readiness: ReadinessPr
         }
         return JSONResponse(payload, status_code=200 if ready else 503)
 
-    register_tools(server, client, settings)
+    register_tools(server, client, settings, groups=groups)
     return server
 
 

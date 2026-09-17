@@ -1,0 +1,69 @@
+{
+  "offset": 0,
+  "limit": 200,
+  "count": 5,
+  "totalCount": 5,
+  "data": [
+    {
+      "type": "WIRELESS",
+      "id": "client-wk-5",
+      "name": "wk-5",
+      "ipAddress": "172.26.40.50",
+      "macAddress": "00:11:22:33:44:55",
+      "uplinkDeviceId": "dev-ap-1",
+      "connectedAt": "2026-09-17T06:12:00Z",
+      "access": {
+        "type": "DEFAULT"
+      },
+      "networkId": "net-clients"
+    },
+    {
+      "type": "WIRED",
+      "id": "client-printer-1",
+      "name": "printer",
+      "ipAddress": "172.26.40.10",
+      "macAddress": "aa:bb:cc:00:00:01",
+      "uplinkDeviceId": "dev-switch-1",
+      "connectedAt": "2026-09-16T21:04:11Z",
+      "access": {
+        "type": "DEFAULT"
+      }
+    },
+    {
+      "type": "WIRED",
+      "id": "client-printer-2",
+      "name": "printer",
+      "ipAddress": "172.26.40.11",
+      "macAddress": "aa:bb:cc:00:00:02",
+      "uplinkDeviceId": "dev-switch-1",
+      "connectedAt": "2026-09-16T21:04:09Z",
+      "access": {
+        "type": "DEFAULT"
+      }
+    },
+    {
+      "type": "WIRED",
+      "id": "client-pivpn",
+      "name": "PiVPN",
+      "ipAddress": "172.26.70.33",
+      "macAddress": "dc:a6:32:57:4e:3e",
+      "uplinkDeviceId": "dev-gateway",
+      "connectedAt": "2026-09-09T01:16:52Z",
+      "access": {
+        "type": "DEFAULT"
+      }
+    },
+    {
+      "type": "WIRELESS",
+      "id": "client-ipad",
+      "name": "Brigitte iPad Pro 10.5",
+      "ipAddress": "172.26.40.206",
+      "macAddress": "78:7b:8a:99:1a:36",
+      "uplinkDeviceId": "dev-ap-1",
+      "connectedAt": "2026-09-15T14:30:00Z",
+      "access": {
+        "type": "DEFAULT"
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "offset": 0,
+  "limit": 25,
+  "count": 3,
+  "totalCount": 3,
+  "data": [
+    {
+      "type": "IPV4",
+      "id": "acl-rule-allow",
+      "enabled": true,
+      "name": "040-0-TRUSTED-ALLOW-K8S",
+      "action": "ALLOW",
+      "index": 0,
+      "sourceFilter": {
+        "type": "IP_ADDRESSES_OR_SUBNETS",
+        "ipAddressesOrSubnets": ["172.26.40.104", "172.26.40.105"]
+      },
+      "destinationFilter": {
+        "type": "NETWORKS",
+        "networkIds": ["net-k8s"]
+      },
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "type": "IPV4",
+      "id": "acl-rule-block",
+      "enabled": false,
+      "name": "100-8-K8S-BLOCK-NAS",
+      "action": "BLOCK",
+      "index": 1,
+      "sourceFilter": {
+        "type": "NETWORKS",
+        "networkIds": ["net-k8s"]
+      },
+      "destinationFilter": {
+        "type": "NETWORKS",
+        "networkIds": ["net-nas"]
+      },
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "type": "IPV4",
+      "id": "acl-rule-ports",
+      "enabled": true,
+      "name": "100-9-CLIENTS-ALLOW-DNS",
+      "action": "ALLOW",
+      "index": 2,
+      "sourceFilter": {
+        "type": "PORTS",
+        "portFilter": [53]
+      },
+      "destinationFilter": {
+        "type": "NETWORKS",
+        "networkIds": ["net-nas"]
+      },
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ]
+}

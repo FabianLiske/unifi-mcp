@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-17 (WP-0 … WP-7 done)
+Stand: 2026-09-17 (WP-0 … WP-10 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -35,9 +35,9 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-5  | Normalisierung, Redaction, Limits    | 1        | done        | WP-4      |
 | WP-6  | MCP-Server-Gerüst + Auth               | 1        | done        | WP-3–5    |
 | WP-7  | Tool-Framework + System/Sites/Devices  | 2        | done        | WP-6      |
-| WP-8  | Clients + inspect_client_path          | 2        | open        | WP-7      |
-| WP-9  | Networks / WiFi / Firewall             | 2        | open        | WP-7      |
-| WP-10 | ACL / Traffic / Reference              | 2        | open        | WP-7      |
+| WP-8  | Clients + inspect_client_path          | 2        | done        | WP-7      |
+| WP-9  | Networks / WiFi / Firewall             | 2        | done        | WP-7      |
+| WP-10 | ACL / Traffic / Reference              | 2        | done        | WP-7      |
 | WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | open        | WP-6      |
 | WP-12 | Tests, Smoke, README, DoD              | 3        | open        | WP-7–11   |
 | WP-13 | Safe-Writes-Fundament                  | post-MVP | open        | WP-12     |
@@ -216,7 +216,16 @@ Status: `done`
 
 Abnahme: Fixture-Test zum Szenario „Finde wk-5 und zeig mir, worüber er verbunden ist" + Ambiguitätsfall.
 
-Status: `open`
+- [x] `tools/clients.py`: `list_clients`, `get_client`, `inspect_client_path` (alle read-only, §31-Descriptions, `wrap_tool`)
+- [x] **Live-Verifikation (WP-8):** Client-List-/Detail-Objekt **identisch** geformt: `id, name, type (WIRED|WIRELESS), ipAddress, macAddress, uplinkDeviceId, connectedAt, access` — **kein `hostname`-Feld (→ `name`), kein `networkId`, kein Port-/SSID-Feld**. Filter verifiziert: `type.eq`, `ipAddress.eq`, `macAddress.eq`, `or(...)` akzeptiert (21 Treffer), `id.eq(UUID ohne Quotes)`, `connectedAt.gt`; **nicht** filterbar: `name.like`, `networkId.eq`, `uplinkDeviceId.eq`, `ipAddress.like` (400). `uplinkDeviceId` ist bei wired **und** wireless das Attachment-Feld.
+- [x] **Abweichung (API-Limit, dokumentiert in DESCRIPTIONs):** `network_id`-Filter → client-seitiges IPv4-Subnet-Matching (Network-Detail → CIDR-Containment; 404 → `not_found`); `connected_to_device_id` → client-seitiges `uplinkDeviceId`-Matching; `search` → serverseitig bei exaktem IPv4/MAC (`ipAddress.eq`/`macAddress.eq`), sonst case-insensitive Substring über name/IP/MAC (max. 200 Clients). `get_client(hostname=...)` matcht `name` exakt (case-insensitive).
+- [x] `get_client`: exakt-einer-Identifier-Regel (0/2/3 → `validation`), 0 Treffer → `not_found`, >1 → `ambiguous_match` mit kompakten Matches (`id/name/ipAddress/macAddress`)
+- [x] `inspect_client_path`: `{client, network, attachment{device, port}, observations}`; live **kein Client→Network-Mapping** (kein `networkId`, `/networks/{id}/clients` existiert nicht, `/networks/{id}/references` → 500) → `network` nur bei vorhandenem `networkId`, sonst null + `no_network_assignment`; `attachment.port` ist immer null + Observation (`port_not_reported_by_api`) — weder Client- noch Device-Objekt tragen Port-/SSID-Info (OpenAPI 10.4.57 bestätigt); observations rein faktenbasiert
+- [x] Abnahme (E2E): Szenario `inspect_client_path(hostname="wk-5")` → Client + Network „Clients" (vlan 40) + AP-Attachment + wireless-Observations; Ambiguitätsfall (2× hostname „printer" → `ambiguous_match`, 2 matches); Filter-Expression im Request verifiziert; limit-Clamp 200; `not_found` (Site + Network); `validation` (2 Identifier)
+- [x] Fixtures: `clients.json` (5 Clients inkl. wk-5 + 2× „printer"), `client_path_networks.json`
+- [x] Lokal: 48 Tests (39 unit + 9 e2e), ruff + mypy strict grün
+
+Status: `done`
 
 ### WP-9 — Networks / WiFi / Firewall
 
@@ -224,7 +233,16 @@ Status: `open`
 
 Abnahme: Fixture-Integrationstests; Redaction auf WiFi-Objekten verifiziert.
 
-Status: `open`
+- [x] `tools/networks.py` (`list_networks`, `get_network`), `tools/wifi.py` (`list_wifi`, `get_wifi`), `tools/firewall.py` (`list_firewall_zones`, `get_firewall_zone`) — alle read-only, §31-Descriptions, `wrap_tool`
+- [x] **Live-Verifikation (WP-9):** Networks: **15** — List-Item `id, name, enabled, vlanId, management (GATEWAY|SWITCH|UNMANAGED), default, metadata` (kein `type`, **kein** `ipv4Configuration` in der Liste); Detail zusätzlich `ipv4Configuration{hostIpAddress, prefixLength, dhcpConfiguration{mode, ipAddressRange, leaseTimeSeconds, ...}}`, `isolationEnabled`, ... . WiFi-Broadcasts: **2** — `id, name` (= SSID), `enabled, type (STANDARD|IOT_OPTIMIZED), network{type,networkId}, securityConfiguration{type}`; **PSK-Feldpfad exakt: `securityConfiguration.passphrase`** (nur im Detail, WPA2/WPA3_PERSONAL Klartext)
+- [x] Redaction: `passphrase` (und `psk`/`*psk`-Suffixe) → `[REDACTED]`; **PSK-Absenz verifiziert**: rohe Fixture-Werte tauchen weder in List- noch Detail-Output auf (JSON-Dump-Assertion), `passphrase == "[REDACTED]"` bei List **und** Detail
+- [x] Firewall: 400 `api.firewall.zone-based-firewall-not-configured` → strukturierter Fehler `unsupported` (via `unifi_error_to_dict`), E2E-verifiziert
+- [x] Abweichung: Design-§10.5/10.6 listet Ideal-Summary-Felder (subnet, gateway, dhcp_mode, bands …), die das Gateway in der Liste nicht liefert → Tools geben normalisiertes Objekt (summary/detail) aus statt fester Projektion; Normalisierung ist drift-tolerant (Felder optional)
+- [x] Abnahme: Fixture-Integrationstests (27 Tests: 10+7+6 unit + 4 e2e), alle 5 Pflicht-Szenarien + tools/list + Default-Site-Resolution
+- [x] Fixtures: `networks.json` (LAN/IoT/Guest), `wifi.json` (2 Broadcasts mit rohen PSKs für die Absence-Assertions)
+- [x] Lokal: ruff + mypy strict grün
+
+Status: `done`
 
 ### WP-10 — ACL / Traffic / Reference
 
@@ -232,7 +250,16 @@ Status: `open`
 
 Abnahme: Fixture-Integrationstests.
 
-Status: `open`
+- [x] `tools/acl.py` (`list_acl_rules`, `get_acl_rule`), `tools/traffic.py` (`list_traffic_matching_lists`, `get_traffic_matching_list`), `tools/reference.py` (`list_reference_resources`) — alle read-only, §31-Descriptions, `wrap_tool`
+- [x] **Live-Verifikation (WP-10):** ACL: **8** Regeln — `{type: "IPV4", id, enabled, name, action, index, sourceFilter, destinationFilter, metadata}`; **Action-Enum ist `ALLOW`/`BLOCK` (kein `DENY`!)**; serverseitig filterbar: `action.eq('ALLOW')` (case-sensitive), `enabled.eq(true/false)` (unquoted), **nested** `sourceFilter.type.eq('NETWORKS')` — Filter-Typen: `NETWORKS`, `IP_ADDRESSES_OR_SUBNETS`, `PORTS`, `MAC_ADDRESSES`. TMLs: **17** — `{type: "IPV4_ADDRESSES"|"PORTS", id, name, items[{type, value}]}`. Referenz: `/countries` 248, `/dpi/applications` 2112, `/dpi/categories` 35, `/radius/profiles` 2, `/wans` 2, `/vpn/servers` 0, `/device-tags` 0. ⚠️ **Pfad-Korrektur: `/vpn/site-to-site` → `/vpn/site-to-site-tunnels`** (api-notes korrigiert)
+- [x] `action`-Allowlist: `allow`→`ALLOW`, `deny`→`BLOCK` (`block` als Alias, Pattern wie devices Raw-Werte)
+- [x] `source`/`destination`-Semantik: *Art* des Endpoint-Filters (`networks|ip_addresses|ports|mac_addresses` → `sourceFilter.type.eq(...)`), 100 % gateway-seitig filterbar (API speichert nur IDs, keine Namen) — in DESCRIPTION dokumentiert
+- [x] `list_reference_resources`: 8 snake_case-Typen — `countries`, `dpi_applications`, `dpi_categories` (top-level, site ignoriert); `wan_interfaces`, `site_to_site_vpn_tunnels`, `vpn_servers`, `radius_profiles`, `device_tags` (site-scoped); invalid type → `validation`
+- [x] Abnahme: 60 Tests (49 unit + 11 e2e), alle 5 Pflicht-Szenarien + Aliase/Kombi-Filter/404s/invalid-values
+- [x] Fixtures: `acl_rules.json` (2×ALLOW/1×BLOCK, Filter-Typ-Mix, enabled-Mix), `traffic_matching_lists.json` (2 TMLs); Referenz-Data inline in E2E (klein)
+- [x] Lokal: ruff + mypy strict grün
+
+Status: `done`
 
 ## Phase 3 — Container & MVP-Abschluss
 

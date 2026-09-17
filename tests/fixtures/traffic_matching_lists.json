@@ -1,0 +1,28 @@
+{
+  "offset": 0,
+  "limit": 25,
+  "count": 2,
+  "totalCount": 2,
+  "data": [
+    {
+      "type": "IPV4_ADDRESSES",
+      "id": "tml-subnets",
+      "name": "TRUSTED_SUBNETS",
+      "items": [
+        { "type": "SUBNET", "value": "172.26.40.0/24" },
+        { "type": "SUBNET", "value": "172.26.100.0/24" }
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "type": "PORTS",
+      "id": "tml-ports",
+      "name": "DNS_PORTS",
+      "items": [
+        { "type": "PORT_NUMBER", "value": 53 },
+        { "type": "PORT_NUMBER", "value": 853 }
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ]
+}
