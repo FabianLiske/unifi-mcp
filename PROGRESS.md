@@ -271,7 +271,8 @@ GH-Actions (`.github/workflows/build-image.yaml`): Build (buildx, `linux/amd64,l
 Abnahme: Build lokal + in CI grün; `docker run` + `/healthz` OK.
 
 Umgesetzt: Dockerfile, Workflow, Console-Script. Builder-Logik + Entry-Point lokal verifiziert (simulierte Build-Dir, `/healthz` 200, `/mcp` 401/200, ruff/mypy/292 Tests grün).
-Noch ausstehend: `docker buildx build` (beide Arch) + `docker run`-Smoke + CI-Run grün (kein Docker-Daemon in dieser Umgebung).
+CI grün (Commit `1055fd6`); Image `ghcr.io/fabianliske/unifi-mcp:sha-1055fd6` als Multi-Arch-Index (`linux/amd64` + `linux/arm64`) verifiziert.
+Noch ausstehend: `docker run`-Smoke-Test (`/healthz`) — kein Docker-Daemon in dieser Umgebung.
 
 Status: `in_progress`
 
