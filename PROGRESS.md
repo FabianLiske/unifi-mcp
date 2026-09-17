@@ -38,7 +38,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-8  | Clients + inspect_client_path          | 2        | done        | WP-7      |
 | WP-9  | Networks / WiFi / Firewall             | 2        | done        | WP-7      |
 | WP-10 | ACL / Traffic / Reference              | 2        | done        | WP-7      |
-| WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | in_progress | WP-6      |
+| WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | done        | WP-6      |
 | WP-12 | Tests, Smoke, README, DoD              | 3        | open        | WP-7–11   |
 | WP-13 | Safe-Writes-Fundament                  | post-MVP | open        | WP-12     |
 | WP-14 | Erste Write-Tools                      | post-MVP | open        | WP-13     |
@@ -272,9 +272,9 @@ Abnahme: Build lokal + in CI grün; `docker run` + `/healthz` OK.
 
 Umgesetzt: Dockerfile, Workflow, Console-Script. Builder-Logik + Entry-Point lokal verifiziert (simulierte Build-Dir, `/healthz` 200, `/mcp` 401/200, ruff/mypy/292 Tests grün).
 CI grün (Commit `1055fd6`); Image `ghcr.io/fabianliske/unifi-mcp:sha-1055fd6` als Multi-Arch-Index (`linux/amd64` + `linux/arm64`) verifiziert.
-Noch ausstehend: `docker run`-Smoke-Test (`/healthz`) — kein Docker-Daemon in dieser Umgebung.
+Abnahme lokal: `docker buildx build --platform linux/amd64,linux/arm64` grün; `docker run --read-only` + non-root (`unifi`): `/healthz` 200, `/readyz` 503 ohne Gateway (erwartet), `/mcp` 401/200.
 
-Status: `in_progress`
+Status: `done`
 
 ### WP-12 — Tests, Smoke, README, DoD
 
