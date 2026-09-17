@@ -1,0 +1,36 @@
+{
+  "id": "dev-ap-1",
+  "name": "UAP AC Lite EG",
+  "model": "UAP-AC-Lite",
+  "state": "ONLINE",
+  "configurationId": "c0ffe51e-9a3b-4c2d-8e6f-1a2b3c4d5e6f",
+  "adoptedAt": "2026-08-02T09:15:00Z",
+  "provisionedAt": "2026-08-02T09:15:03Z",
+  "firmwareVersion": "5.1.33",
+  "firmwareUpdatable": true,
+  "supported": true,
+  "ipAddress": "172.26.1.11",
+  "macAddress": "00:00:00:00:00:03",
+  "features": {
+    "accessPoint": {}
+  },
+  "interfaces": {
+    "radios": [
+      {
+        "channel": 11,
+        "channelWidthMHz": 20,
+        "frequencyGHz": 2.4,
+        "wlanStandard": "802.11n"
+      },
+      {
+        "channel": 36,
+        "channelWidthMHz": 40,
+        "frequencyGHz": 5,
+        "wlanStandard": "802.11ac"
+      }
+    ]
+  },
+  "metadata": {
+    "origin": "SYSTEM_DEFINED"
+  }
+}

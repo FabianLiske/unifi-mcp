@@ -39,7 +39,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-9  | Networks / WiFi / Firewall             | 2        | done        | WP-7      |
 | WP-10 | ACL / Traffic / Reference              | 2        | done        | WP-7      |
 | WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | done        | WP-6      |
-| WP-12 | Tests, Smoke, README, DoD              | 3        | open        | WP-7–11   |
+| WP-12 | Tests, Smoke, README, DoD              | 3        | done        | WP-7–11   |
 | WP-13 | Safe-Writes-Fundament                  | post-MVP | open        | WP-12     |
 | WP-14 | Erste Write-Tools                      | post-MVP | open        | WP-13     |
 | WP-15 | Restliche Write-Tools                  | post-MVP | open        | WP-14     |
@@ -278,11 +278,13 @@ Status: `done`
 
 ### WP-12 — Tests, Smoke, README, DoD
 
-MCP-Contract-Tests (§37), Fake-UniFi-API-Integrationstests mit Fixtures (§36), Live-Smoke-Test per `docker run` gegen das echte Gateway (Checkliste §38, Gateway-Cert gemountet), README (§46), MVP-DoD-Checkliste (§47).
+MCP-Contract-Tests (§37), Fake-UniFi-API-Integrationstests mit Fixtures (§36), Live-Smoke-Test per `docker run` gegen das echte Gateway (Checkliste §38, TLS `extract-once`), README (§46), MVP-DoD-Checkliste (§47).
 
 Abnahme: MVP-DoD vollständig (Cluster-Punkte als „→ Deploy-Repo" markiert).
 
-Status: `open`
+Umgesetzt: Contract-Tests + Fake-API-E2E existierten aus WP-7..10; Gap-Schließung: `device_detail.json` (Detail-Form mit `features`-Dict/`interfaces`-Objekt) + E2E-Ausbau, `firewall_zones.json` + Firewall-Success-Case (neu `test_firewall_e2e.py`), outputSchema-Validierung, Input-Schema-Validierung → 299 Tests grün. Live-Smoke 10/10 (Gateway 10.6.101, Site „Default", 17 Tools; Firewall am Gateway unkonfiguriert → designed `unsupported`-Result). `README.md` neu (13 Punkte §46, Deutsch). DoD-Audit: alle 24 Client-Endpunkte im OpenAPI-Spec, keine Legacy-Pfade genutzt.
+
+Status: `done`
 
 ## Post-MVP (Phasen 2–5 laut Design-Doc)
 
@@ -332,18 +334,18 @@ Status: `open`
 ### Server-seitig (dieses Repo)
 
 - [x] offizieller lokaler UniFi Network API Client funktioniert (WP-4, live gegen 10.6.101 verifiziert)
-- [ ] keine Legacy-/undokumentierten Endpunkte
-- [ ] Streamable HTTP `/mcp` funktioniert, stateless
-- [ ] MCP-Upstream-Auth (Bearer) funktioniert
-- [ ] non-root Container-Image
-- [ ] Read-only Toolset verfügbar
-- [ ] Write-/Action-/Delete-Tools sind nicht registriert
-- [ ] Secrets werden redigiert
-- [ ] Pagination und Response-Limits existieren
-- [ ] Logs sind strukturiert
-- [ ] Unit-, Mock-Integration- und MCP-Contract-Tests existieren
-- [ ] Live-Smoke-Test gegen echtes Gateway erfolgreich
-- [ ] README und `docs/unifi-api-notes.md` vorhanden
+- [x] keine Legacy-/undokumentierten Endpunkte (Endpoint-Audit WP-12: 24/24 im OpenAPI-Spec, alle GET, keine Legacy-Pfade)
+- [x] Streamable HTTP `/mcp` funktioniert, stateless (`stateless_http=True` + Contract-Tests)
+- [x] MCP-Upstream-Auth (Bearer) funktioniert (Middleware + Tests 401/403)
+- [x] non-root Container-Image (Dockerfile `USER unifi`, uid 10001)
+- [x] Read-only Toolset verfügbar (17 Tools, Registry + Contract-Tests)
+- [x] Write-/Action-/Delete-Tools sind nicht registriert (nur Read-Gruppen, Gating-Tests)
+- [x] Secrets werden redigiert (`redaction.py` + Unit/E2E, PSK live verifiziert)
+- [x] Pagination und Response-Limits existieren (`normalization.py` + Tests)
+- [x] Logs sind strukturiert (structlog-JSON + Tests)
+- [x] Unit-, Mock-Integration- und MCP-Contract-Tests existieren (299 Tests, grün)
+- [x] Live-Smoke-Test gegen echtes Gateway erfolgreich (WP-12, 10/10, Gateway 10.6.101)
+- [x] README und `docs/unifi-api-notes.md` vorhanden (WP-12)
 
 ### Cluster-seitig (→ Deploy-Repo)
 

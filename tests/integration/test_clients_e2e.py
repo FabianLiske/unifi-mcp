@@ -56,7 +56,7 @@ def _register_detail_route(respx_mock: Any, base_path: str, items: list[dict[str
 def _register_client_routes(respx_mock: Any, load_fixture: Any) -> list[httpx.Request]:
     """Register the WP-8 routes; last-registered wins over fake_unifi stubs."""
     clients_fixture = load_fixture("clients.json")
-    devices_fixture = load_fixture("devices.json")
+    device_detail = load_fixture("device_detail.json")
     network_fixture = load_fixture("client_path_networks.json")
     list_requests: list[httpx.Request] = []
 
@@ -84,7 +84,9 @@ def _register_client_routes(respx_mock: Any, load_fixture: Any) -> list[httpx.Re
     respx_mock.get(f"{BASE}/sites/{SITE}/clients").mock(side_effect=_clients)
     _register_detail_route(respx_mock, f"{BASE}/sites/{SITE}/clients", clients_fixture["data"])
     _register_detail_route(respx_mock, f"{BASE}/sites/{SITE}/networks", network_fixture["data"])
-    _register_detail_route(respx_mock, f"{BASE}/sites/{SITE}/devices", devices_fixture["data"])
+    # The device detail endpoint returns the detail form (docs/unifi-api-notes.md
+    # §5a): features is a dict, interfaces an object — not the list shapes.
+    _register_detail_route(respx_mock, f"{BASE}/sites/{SITE}/devices", [device_detail])
     return list_requests
 
 
@@ -111,8 +113,21 @@ async def test_inspect_client_path_acceptance(clients_routes, mcp_app_factory) -
     assert payload["client"]["macAddress"] == "00:11:22:33:44:55"
     assert payload["network"]["name"] == "Clients"
     assert payload["network"]["vlanId"] == 40
-    assert payload["attachment"]["device"]["id"] == "dev-ap-1"
-    assert payload["attachment"]["device"]["name"] == "UAP AC Lite EG"
+    device = payload["attachment"]["device"]
+    assert device["id"] == "dev-ap-1"
+    assert device["name"] == "UAP AC Lite EG"
+    assert device["state"] == "ONLINE"
+    assert device["ipAddress"] == "172.26.1.11"
+    # detail form (docs/unifi-api-notes.md §5a): features is a dict and
+    # interfaces an object of interface categories, not list/list
+    assert device["features"] == {"accessPoint": {}}
+    assert isinstance(device["interfaces"], dict)
+    assert [radio["wlanStandard"] for radio in device["interfaces"]["radios"]] == [
+        "802.11n",
+        "802.11ac",
+    ]
+    # detail normalization strips internal fields
+    assert "metadata" not in device
     assert payload["attachment"]["port"] is None
     observations = payload["observations"]
     assert "wireless" in observations

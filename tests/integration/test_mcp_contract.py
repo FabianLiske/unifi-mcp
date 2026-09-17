@@ -11,8 +11,10 @@ from contextlib import AsyncExitStack
 from typing import Any
 
 import httpx
+import jsonschema
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp_types import TextContent
 
 _MCP_URL = "http://testserver/mcp"
 
@@ -20,6 +22,10 @@ _MCP_URL = "http://testserver/mcp"
 def _http_client(app: Any, token: str | None) -> httpx.AsyncClient:
     headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), headers=headers)
+
+
+def _result_text(result: Any) -> str:
+    return "\n".join(c.text for c in result.content if isinstance(c, TextContent))
 
 
 async def test_initialize_and_tools_list(mcp_app) -> None:
@@ -101,3 +107,79 @@ async def test_readyz_public_and_ready(mcp_app) -> None:
         body = response.json()
         assert body["status"] == "ready"
         assert "10.6.101" in body["detail"]
+
+
+# --- design §37: outputSchema (point 5) -------------------------------------
+
+
+async def test_tools_advertise_output_schema(mcp_session) -> None:
+    """Representative tools from tools/list carry an object outputSchema."""
+    async with mcp_session() as session:
+        tools = await session.list_tools()
+    by_name = {tool.name: tool for tool in tools.tools}
+    representative = (
+        "get_system_info",
+        "list_sites",
+        "list_devices",
+        "inspect_client_path",
+        "list_firewall_zones",
+        "get_firewall_zone",
+    )
+    for name in representative:
+        schema = by_name[name].output_schema
+        assert isinstance(schema, dict), f"{name} does not advertise an outputSchema"
+        assert schema.get("type") == "object", f"{name} outputSchema is not an object schema"
+
+
+async def test_structured_content_conforms_to_output_schema(mcp_session) -> None:
+    """The structuredContent of called tools validates against their outputSchema."""
+    async with mcp_session() as session:
+        tools = await session.list_tools()
+        schemas = {tool.name: tool.output_schema for tool in tools.tools}
+        sites = await session.call_tool("list_sites", {})
+        info = await session.call_tool("get_system_info", {})
+        devices = await session.call_tool("list_devices", {})
+    for result in (sites, info, devices):
+        assert result.is_error is not True
+        assert result.structured_content is not None
+    jsonschema.validate(sites.structured_content, schemas["list_sites"])
+    jsonschema.validate(info.structured_content, schemas["get_system_info"])
+    jsonschema.validate(devices.structured_content, schemas["list_devices"])
+
+
+# --- design §37: input-schema validation (point 7) ---------------------------
+
+
+async def test_wrong_typed_tool_argument_returns_clean_error_result(mcp_session) -> None:
+    """A type mismatch yields an isError result, not a JSON-RPC error or crash.
+
+    Empirically observed (mcp SDK 2.x): the arguments are validated against
+    the tool's input schema server-side; a mismatch produces an isError
+    CallToolResult carrying the pydantic validation message, while the
+    session stays usable (no exception is raised by the client).
+    """
+    async with mcp_session() as session:
+        result = await session.call_tool("list_devices", {"limit": "not-an-int"})
+        # the session survives the failed call
+        follow_up = await session.call_tool("list_sites", {})
+    assert result.is_error is True
+    assert result.structured_content is None
+    text = _result_text(result)
+    assert "list_devices" in text
+    assert "validation error" in text
+    assert "Traceback" not in text
+    assert follow_up.is_error is not True
+
+
+async def test_unknown_tool_argument_is_ignored_cleanly(mcp_session) -> None:
+    """Empirically observed (mcp SDK 2.x): unknown arguments are dropped.
+
+    The generated input schema does not set ``additionalProperties: false``,
+    so pydantic ignores the extra key and the tool executes normally — a
+    clean success result, no error, no crash.
+    """
+    async with mcp_session() as session:
+        result = await session.call_tool("list_devices", {"bogus": True})
+    assert result.is_error is not True
+    assert result.structured_content is not None
+    assert result.structured_content["total_count"] == 4

@@ -1,0 +1,39 @@
+{
+  "offset": 0,
+  "limit": 50,
+  "count": 3,
+  "totalCount": 3,
+  "data": [
+    {
+      "id": "0f8fad5b-2c3e-4a6b-9d1e-1a2b3c4d5e6f",
+      "name": "LAN",
+      "networkIds": [
+        "net-lan",
+        "net-iot"
+      ],
+      "metadata": {
+        "origin": "USER_DEFINED"
+      }
+    },
+    {
+      "id": "1e7ecb4a-3d2f-4b5c-8e0d-2b3c4d5e6f7a",
+      "name": "Guest",
+      "networkIds": [
+        "net-guest"
+      ],
+      "metadata": {
+        "origin": "USER_DEFINED"
+      }
+    },
+    {
+      "id": "9a8b7c6d-5e4f-4a3b-b2c1-d0e9f8a7b6c5",
+      "name": "IoT",
+      "networkIds": [
+        "net-iot"
+      ],
+      "metadata": {
+        "origin": "SYSTEM_DEFINED"
+      }
+    }
+  ]
+}
