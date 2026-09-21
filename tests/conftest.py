@@ -204,15 +204,16 @@ def fake_unifi(respx_mock, load_fixture) -> FakeUniFi:
         respx_mock.get(f"{base}/sites/{fake.site_id}/{resource}").mock(
             return_value=httpx.Response(200, json=EMPTY_PAGE)
         )
-    respx_mock.get(f"{base}/sites/{fake.site_id}/firewall/zones").mock(
-        return_value=httpx.Response(
-            400,
-            json={
-                "code": "api.firewall.zone-based-firewall-not-configured",
-                "message": "Zone-based firewall is not configured.",
-            },
+    for resource in ("firewall/zones", "firewall/policies"):
+        respx_mock.get(f"{base}/sites/{fake.site_id}/{resource}").mock(
+            return_value=httpx.Response(
+                400,
+                json={
+                    "code": "api.firewall.zone-based-firewall-not-configured",
+                    "message": "Zone-based firewall is not configured.",
+                },
+            )
         )
-    )
     return fake
 
 

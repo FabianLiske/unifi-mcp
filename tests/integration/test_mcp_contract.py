@@ -45,7 +45,7 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
 
         tools = await session.list_tools()
         names = [tool.name for tool in tools.tools]
-        # WP-7–10: exactly the read-only MVP toolset (10 groups).
+        # WP-7–10 (+ WP-13 firewall policies): exactly the read-only toolset.
         assert set(names) == {
             "get_system_info",
             "list_sites",
@@ -59,13 +59,16 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
             "get_wifi",
             "list_firewall_zones",
             "get_firewall_zone",
+            "list_firewall_policies",
+            "get_firewall_policy",
+            "get_firewall_policy_ordering",
             "list_acl_rules",
             "get_acl_rule",
             "list_traffic_matching_lists",
             "get_traffic_matching_list",
             "list_reference_resources",
         }
-        assert len(names) == 17
+        assert len(names) == 20
         # Read-only MVP: no write/action/delete tool may be listed.
         forbidden = ("write", "update", "create", "delete", "restart", "cycle", "reconnect")
         assert not any(word in name for name in names for word in forbidden)
@@ -124,6 +127,9 @@ async def test_tools_advertise_output_schema(mcp_session) -> None:
         "inspect_client_path",
         "list_firewall_zones",
         "get_firewall_zone",
+        "list_firewall_policies",
+        "get_firewall_policy",
+        "get_firewall_policy_ordering",
     )
     for name in representative:
         schema = by_name[name].output_schema

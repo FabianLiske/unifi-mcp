@@ -601,11 +601,34 @@ Detail ohne Secrets.
 
 ---
 
-## 10.7 Firewall Zones
+## 10.7 Firewall Zones (Zone-Based-Firewall)
 
 ### `list_firewall_zones`
 
 ### `get_firewall_zone`
+
+### `list_firewall_policies`
+
+Optionale Filter (alle gateway-seitig, Allowlisten — kein Filter-Passthrough):
+
+```text
+name                 Substring (name.like)
+origin               user | system (metadata.origin)
+source_zone_id       UUID (source.zoneId, unquoted)
+destination_zone_id  UUID (destination.zoneId, unquoted)
+```
+
+Hinweise (live 2026-09-21, docs/unifi-api-notes.md §5e): abgeleitete
+System-Policies können ohne `id` gelistet sein (nicht per Detail abrufbar);
+`action`/`enabled` sind nicht filterbar.
+
+### `get_firewall_policy`
+
+### `get_firewall_policy_ordering`
+
+Parameter: `source_zone_id` + `destination_zone_id` (Zonenpaar, beide
+Pflicht, UUID). Liefert `before_system_defined` / `after_system_defined`
+(ID-Listen vor/nach den System-Policies).
 
 ---
 

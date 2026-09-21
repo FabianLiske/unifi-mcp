@@ -8,7 +8,7 @@ unifi-mcp ist ein Adapter zwischen MCP und der lokalen UniFi Network API. Ein LL
 
 - Netzwerkzustand und Topologie untersuchen (Versionen, Sites, Geräte),
 - Clients finden und diagnostizieren (inkl. `inspect_client_path`),
-- Networks/VLANs, WiFi, Firewall-Zonen, ACL-Regeln und Traffic-Matching-Lists lesen.
+- Networks/VLANs, WiFi, Firewall-Zonen und -Policies, ACL-Regeln und Traffic-Matching-Lists lesen.
 
 Der MVP ist strikt read-only: Es werden ausschließlich Read-Tools registriert, und das Gateway bekommt nur `GET`-Requests. Details zum geplanten Write-/Action-Design stehen im [Design-Doc](unifi-mcp-kubernetes-design.md) (Kapitel 13–18, 40) und in [PROGRESS.md](PROGRESS.md) (WP-13 ff.).
 
@@ -188,6 +188,9 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | --- | --- |
 | `list_firewall_zones` | Zone-Based-Firewall-Zonen der Site; liefert strukturiert `unsupported`, wenn das Gateway die Zone-Based-Firewall nicht konfiguriert hat |
 | `get_firewall_zone` | Eine Firewall-Zone per ID |
+| `list_firewall_policies` | Zone-Based-Firewall-Policies (Zonenpaar-Regeln) mit Action, enabled, Index und Zone-Zuordnung (Summary, tiefe Traffic-Filter weggeprunkt); Filter `name`, `origin` (user \| system), `source_zone_id`, `destination_zone_id` — alle gateway-seitig. Abgeleitete System-Policies können ohne `id` sein (dann nicht per Detail abrufbar) |
+| `get_firewall_policy` | Eine Firewall-Policy per ID inkl. vollständiger Source-/Destination-Traffic-Filter (Netzwerke, IPs/Subnets, Ports, DPI-Apps) |
+| `get_firewall_policy_ordering` | Evaluationsreihenfolge der Policies für ein Zonenpaar: ID-Listen `before_system_defined` / `after_system_defined` (vor/nach den System-Policies) |
 
 ### ACL
 

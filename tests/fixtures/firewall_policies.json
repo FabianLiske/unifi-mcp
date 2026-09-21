@@ -1,0 +1,161 @@
+{
+  "offset": 0,
+  "limit": 50,
+  "count": 4,
+  "totalCount": 4,
+  "data": [
+    {
+      "enabled": true,
+      "name": "000-0-ALLOW-ESTABLISHED-RELATED",
+      "index": 10000,
+      "action": {
+        "type": "ALLOW",
+        "allowReturnTraffic": false
+      },
+      "source": {
+        "zoneId": "0a2bd089-61df-49ad-a33c-633879146ade"
+      },
+      "destination": {
+        "zoneId": "0a2bd089-61df-49ad-a33c-633879146ade"
+      },
+      "ipProtocolScope": {
+        "ipVersion": "IPV4"
+      },
+      "connectionStateFilter": [
+        "RELATED",
+        "ESTABLISHED"
+      ],
+      "loggingEnabled": false,
+      "metadata": {
+        "origin": "SYSTEM_DEFINED"
+      }
+    },
+    {
+      "id": "5bf82e53-61ca-4053-85b6-d90fd3f38dab",
+      "enabled": true,
+      "name": "040-9-CLIENTS-DROP-ANY",
+      "description": "Drop everything from the client subnet to the gateway",
+      "index": 10024,
+      "action": {
+        "type": "BLOCK"
+      },
+      "source": {
+        "zoneId": "11b9482d-fbcd-4b08-a92f-ec520447c7ac"
+      },
+      "destination": {
+        "zoneId": "7fe5d0e4-29c9-4ed7-98d8-a8d040c8bf9a",
+        "trafficFilter": {
+          "type": "IP_ADDRESS",
+          "ipAddressFilter": {
+            "type": "IP_ADDRESSES",
+            "matchOpposite": false,
+            "items": [
+              {
+                "type": "SUBNET",
+                "value": "172.26.40.0/24"
+              }
+            ]
+          }
+        }
+      },
+      "ipProtocolScope": {
+        "ipVersion": "IPV4"
+      },
+      "loggingEnabled": false,
+      "metadata": {
+        "origin": "USER_DEFINED"
+      }
+    },
+    {
+      "id": "13fa53ce-aa48-48bf-9606-fe24f8a9b525",
+      "enabled": true,
+      "name": "060-0-NAS-ALLOW-VPN",
+      "description": "Allow VPN traffic to the NAS services",
+      "index": 10026,
+      "action": {
+        "type": "ALLOW",
+        "allowReturnTraffic": false
+      },
+      "source": {
+        "zoneId": "0a2bd089-61df-49ad-a33c-633879146ade",
+        "trafficFilter": {
+          "type": "IP_ADDRESS",
+          "ipAddressFilter": {
+            "type": "TRAFFIC_MATCHING_LIST",
+            "matchOpposite": false,
+            "trafficMatchingListId": "5509439a-903d-4c6e-8b0e-b327c578b275"
+          }
+        }
+      },
+      "destination": {
+        "zoneId": "51d200fb-160f-4abb-9e2f-e0d1e73ddb89",
+        "trafficFilter": {
+          "type": "IP_ADDRESS",
+          "ipAddressFilter": {
+            "type": "IP_ADDRESSES",
+            "matchOpposite": false,
+            "items": [
+              {
+                "type": "IP_ADDRESS",
+                "value": "172.26.20.151"
+              }
+            ]
+          },
+          "portFilter": {
+            "type": "PORTS",
+            "matchOpposite": false,
+            "items": [
+              {
+                "type": "PORT_NUMBER",
+                "value": 80
+              },
+              {
+                "type": "PORT_NUMBER",
+                "value": 443
+              }
+            ]
+          }
+        }
+      },
+      "ipProtocolScope": {
+        "ipVersion": "IPV4",
+        "protocolFilter": {
+          "type": "NAMED_PROTOCOL",
+          "protocol": {
+            "name": "TCP"
+          },
+          "matchOpposite": false
+        }
+      },
+      "connectionStateFilter": [
+        "INVALID"
+      ],
+      "loggingEnabled": false,
+      "metadata": {
+        "origin": "USER_DEFINED"
+      }
+    },
+    {
+      "id": "bb761c7f-0675-4364-ad69-6e6ba3e92ecb",
+      "enabled": false,
+      "name": "060-9-NAS-DROP-ANY",
+      "index": 10028,
+      "action": {
+        "type": "BLOCK"
+      },
+      "source": {
+        "zoneId": "0a2bd089-61df-49ad-a33c-633879146ade"
+      },
+      "destination": {
+        "zoneId": "51d200fb-160f-4abb-9e2f-e0d1e73ddb89"
+      },
+      "ipProtocolScope": {
+        "ipVersion": "IPV4"
+      },
+      "loggingEnabled": false,
+      "metadata": {
+        "origin": "USER_DEFINED"
+      }
+    }
+  ]
+}

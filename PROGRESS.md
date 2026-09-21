@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-17 (WP-0 … WP-10 done)
+Stand: 2026-09-21 (WP-0 … WP-13 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -40,11 +40,12 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-10 | ACL / Traffic / Reference              | 2        | done        | WP-7      |
 | WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | done        | WP-6      |
 | WP-12 | Tests, Smoke, README, DoD              | 3        | done        | WP-7–11   |
-| WP-13 | Safe-Writes-Fundament                  | post-MVP | open        | WP-12     |
-| WP-14 | Erste Write-Tools                      | post-MVP | open        | WP-13     |
-| WP-15 | Restliche Write-Tools                  | post-MVP | open        | WP-14     |
-| WP-16 | Actions                                | post-MVP | open        | WP-15     |
-| WP-17 | Delete + Deep Diagnostics (optional)   | post-MVP | open        | WP-16     |
+| WP-13 | ZBF Policies (Read)                    | 3        | done        | WP-12     |
+| WP-14 | Safe-Writes-Fundament                  | post-MVP | open        | WP-13     |
+| WP-15 | Erste Write-Tools                      | post-MVP | open        | WP-14     |
+| WP-16 | Restliche Write-Tools                  | post-MVP | open        | WP-15     |
+| WP-17 | Actions                                | post-MVP | open        | WP-16     |
+| WP-18 | Delete + Deep Diagnostics (optional)   | post-MVP | open        | WP-17     |
 
 Parallelisierbar: WP-1 ∥ WP-2 · WP-8 ∥ WP-9 ∥ WP-10 · WP-11 ab WP-6.
 
@@ -286,9 +287,29 @@ Umgesetzt: Contract-Tests + Fake-API-E2E existierten aus WP-7..10; Gap-Schließu
 
 Status: `done`
 
+### WP-13 — ZBF Policies (Read)
+
+Die Zone-Based-Firewall wurde am 2026-09-21 auf dem UCG aktiviert (vorher `not-configured`, nur die Zone-Tools + `unsupported`-Pfad aus WP-9). Damit fehlen noch die Read-Endpunkte für Policies. Alle drei fehlenden GETs implementieren: `list_firewall_policies`, `get_firewall_policy`, `get_firewall_policy_ordering` (Zonenpaar).
+
+Abnahme: Live-Discovery der Policies-Endpunkte (Shape, Filter, Quirks) dokumentiert; Fixture-Unit-Tests + E2E (inkl. `unsupported`-Fallback für Gateways ohne ZBF); Contract-Test 17 → 20 Tools; ruff + mypy + pytest grün; Live-Smoke gegen das UCG.
+
+- [x] **Live-Discovery (WP-13, 10.6.106):** Zonen **13**, Policies **~354** (Count driftet — abgeleitete Policies werden neu berechnet); List-Item-Shape inkl. `action{type, allowReturnTraffic?}`, `source/destination{zoneId, trafficFilter?}`, `ipProtocolScope`, `connectionStateFilter`; **`id` fehlt bei ~13 %** (abgeleitete System-Policies wie `000-0-ALLOW-ESTABLISHED-RELATED` → nicht per Detail abrufbar); Detail zusätzlich `description`; Action-Enum `ALLOW`/`BLOCK`/`REJECT`; Ordering nur mit Zonenpaar (`sourceFirewallZoneId` + `destinationFirewallZoneId`)
+- [x] **Filter (live verifiziert):** `name.like('…')`, `metadata.origin.eq('USER_DEFINED'|'SYSTEM_DEFINED')`, `source.zoneId.eq`/`destination.zoneId.eq` — UUIDs **unquoted** (mit Quotes → 400); **nicht** filterbar: `action.*`, `enabled.*` (400 `api.request.invalid-filter`, auch nicht in der OpenAPI-Filtertabelle)
+- [x] `tools/firewall.py`: `list_firewall_policies` (Filter `name`, `origin` user|system, `source_zone_id`, `destination_zone_id` — Allowlisten + client-seitige UUID-Validierung, kein Filter-Passthrough), `get_firewall_policy` (404 → `not_found` resource `firewall_policy`), `get_firewall_policy_ordering` (→ `before_system_defined`/`after_system_defined`) — alle read-only, §31-Descriptions (inkl. Hinweis: abgeleitete Policies ohne `id`), `wrap_tool`; `unsupported`-Mapping (400 not-configured) bleibt für Gateways ohne ZBF
+- [x] Abweichung: OpenAPI 10.4.57 deklariert `id` im Policy-Object als required, live fehlt er bei abgeleiteten Policies → Normalisierung/Tools tragen fehlendes `id` (Summary-Pruning + Detail unaffected)
+- [x] Fixtures: `firewall_policies.json` (4 Policies: 3× user-defined mit `id`, 1× abgeleitet ohne `id`, Traffic-Filter mit Subnet/Port/TML-Referenz)
+- [x] Unit-Tests: Registration (5 Firewall-Tools), Filter-Builder-Matrix (inkl. Invalid-Value-Cases), Filter-/Pagination-Forwarding, 404-`not_found`, `unsupported`-Mapping (alle 5 Tools), Success-Cases
+- [x] E2E: List (Filter-Expression im Request, `id`-lose Items, Summary-Pruning), Detail, 404, Ordering (Request-Params + `unsupported`), `validation` (invalid Zone-UUID); `fake_unifi`-Default-Stub: Policies wie Zones `not-configured` 400
+- [x] Contract-Test: exakt 20 Tools (17 MVP + 3 Policies) + read-only-hints + outputSchemas
+- [x] Doku: `docs/unifi-api-notes.md` §5/§5e/§6 (Live-Befunde + Historie), README (Firewall-Tabelle), Design-Doc §10.7
+- [x] Lokal: ruff + mypy strict + pytest (332 Tests) grün
+- [x] Live-Smoke gegen UCG (10.6.106): alle 5 Firewall-Tools erfolgreich
+
+Status: `done`
+
 ## Post-MVP (Phasen 2–5 laut Design-Doc)
 
-### WP-13 — Safe-Writes-Fundament
+### WP-14 — Safe-Writes-Fundament
 
 `state_hash` (stabil, Key-Reihenfolge-unabhängig, volatile Stats ignoriert), read-before-write-Guard, Patch-Semantik statt Replace, Field-Allowlists, Write-Guards, Audit-Log (redigiert), `ENABLE_WRITE_TOOLS`.
 
@@ -296,25 +317,25 @@ Abnahme: §35 Write-Guard-Tests: Flag aus → Tool nicht registriert; falscher H
 
 Status: `open`
 
-### WP-14 — Erste Write-Tools
+### WP-15 — Erste Write-Tools
 
 Bewusst risikoarm: `update_wifi` (name/enabled), `update_acl_rule` (enabled).
 
 Status: `open`
 
-### WP-15 — Restliche Write-Tools
+### WP-16 — Restliche Write-Tools
 
 create/update für Networks, WiFi, Firewall-Zonen, ACL, Traffic-Matching-Lists.
 
 Status: `open`
 
-### WP-16 — Actions
+### WP-17 — Actions
 
 `restart_device`, `cycle_port`, `reconnect_client` — strikte semantische Allowlist, kein generisches `action: string`-Passthrough, `ENABLE_ACTION_TOOLS`. Factory reset / remove / adopt nicht exponieren.
 
 Status: `open`
 
-### WP-17 — Delete + Deep Diagnostics (optional)
+### WP-18 — Delete + Deep Diagnostics (optional)
 
 Delete-Tools mit `expected_state_hash` + `confirm_name` (exakter Name-Abgleich), `ENABLE_DELETE_TOOLS`.
 Deep Diagnostics erst wenn die offizielle API nicht reicht; SSH nur als strikt separates Modul mit eigenen Credentials.
@@ -338,7 +359,7 @@ Status: `open`
 - [x] Streamable HTTP `/mcp` funktioniert, stateless (`stateless_http=True` + Contract-Tests)
 - [x] MCP-Upstream-Auth (Bearer) funktioniert (Middleware + Tests 401/403)
 - [x] non-root Container-Image (Dockerfile `USER unifi`, uid 10001)
-- [x] Read-only Toolset verfügbar (17 Tools, Registry + Contract-Tests)
+- [x] Read-only Toolset verfügbar (17 MVP-Tools; + 3 ZBF-Policy-Tools in WP-13 = 20, Registry + Contract-Tests)
 - [x] Write-/Action-/Delete-Tools sind nicht registriert (nur Read-Gruppen, Gating-Tests)
 - [x] Secrets werden redigiert (`redaction.py` + Unit/E2E, PSK live verifiziert)
 - [x] Pagination und Response-Limits existieren (`normalization.py` + Tests)

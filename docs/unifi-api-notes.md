@@ -101,8 +101,9 @@ Top-level (nicht site-scoped): `/info`, `/sites`, `/pending-devices`,
 | list_acl_rules | `/sites/{site}/acl-rules` | ⚠️ `acl/rules` → 404, korrekt ist `acl-rules` (WP-4, live: 8 Regeln) |
 | get_acl_rule | `/sites/{site}/acl-rules/{id}` | `sourceFilter/destinationFilter.{type,networkIds[]}`; **Action-Enum `ALLOW`/`BLOCK` (kein `DENY`!)**, nested-Filter `sourceFilter.type.eq(...)` + `enabled.eq(true/false)` ok (WP-10) |
 | list_traffic_matching_lists | `/sites/{site}/traffic-matching-lists` | 17; `{type: "IPV4_ADDRESSES"\|"PORTS", id, name, items[{type,value}]}` |
-| list_firewall_policies | `/sites/{site}/firewall/policies` | ⚠️ 400 not-configured |
-| get_firewall_policy | `/sites/{site}/firewall/policies/{id}` | ⚠️ 400 not-configured |
+| list_firewall_policies | `/sites/{site}/firewall/policies` | 200 (seit 2026-09-21 ZBF konfiguriert); ~350 Policies; `id` **fehlt bei abgeleiteten System-Policies**; Filter siehe §5e |
+| get_firewall_policy | `/sites/{site}/firewall/policies/{id}` | 200; Detail zusätzlich `description` |
+| get_firewall_policy_ordering | `/sites/{site}/firewall/policies/ordering?sourceFirewallZoneId=…&destinationFirewallZoneId=…` | 200 nur mit **Zonenpaar** (beide Params, sonst 400); `{orderedFirewallPolicyIds{beforeSystemDefined[], afterSystemDefined[]}}` |
 | list_device_tags | `/sites/{site}/device-tags` | (leer) |
 | get_device_tag | `/sites/{site}/device-tags/{id}` | |
 | list_sites | `/sites` | |
@@ -204,19 +205,66 @@ früher notierte Pfad `vpn/site-to-site` liefert 404.
   `/sites/{site}/vpn/site-to-site-tunnels` 0.
 - ⚠️ **Pfad-Korrektur:** `vpn/site-to-site-tunnels` (nicht `vpn/site-to-site` → 404).
 
-## 6. Zone-Based-Firewall nicht konfiguriert (⚠️)
+## 5e. Firewall Zones & Policies (WP-13, live 2026-09-21, 10.6.106)
 
-Auf diesem Gateway liefern **beide**:
+Seit 2026-09-21 ist auf diesem Gateway die Zone-Based-Firewall konfiguriert
+(Capability-Check meldet `firewall: ok`).
+
+- **Zonen: 13** — `BenchNet, Hotspot, Dmz, External, Vpn, Internal,
+  Management, Gameserver, IoT, Monitoring, Services, VoIP, Gateway`. Shape:
+  `{id, name, networkIds[], metadata{origin}}`. System-Zonen
+  (`Hotspot`, `Management`, `Gateway`) haben `networkIds: []`.
+- **Policies: ~354** — Count driftet leicht zwischen Aufrufen
+  (350 → 352 → 354), abgeleitete Policies werden neu berechnet.
+  List-Item: `{enabled, name, index, action{type, allowReturnTraffic?},
+  source{zoneId, trafficFilter?}, destination{zoneId, trafficFilter?},
+  ipProtocolScope{ipVersion, protocolFilter?}, connectionStateFilter?,
+  loggingEnabled, metadata{origin}}`. Detail zusätzlich: `id`, `description`.
+- ⚠️ **`id` fehlt bei ~13 % der List-Items** (OpenAPI 10.4.57 gibt `id` als
+  required an): abgeleitete System-Policies (z. B.
+  `000-0-ALLOW-ESTABLISHED-RELATED`) werden vom Gateway berechnet und
+  haben keine ID → nicht per `GET /policies/{id}` abrufbar. Tools dürfen
+  das fehlende `id` vertragen.
+- **Action-Enum: `ALLOW`/`BLOCK`/`REJECT`** (diskriminiert über `type`);
+  `allowReturnTraffic` nur bei `ALLOW`. `connectionStateFilter`:
+  `NEW|INVALID|ESTABLISHED|RELATED`.
+- **Serverseitig filterbar (live verifiziert):** `name.like('…')`,
+  `metadata.origin.eq('USER_DEFINED'|'SYSTEM_DEFINED')`,
+  `source.zoneId.eq(<uuid>)`, `destination.zoneId.eq(<uuid>)`.
+  UUIDs **ohne Quotes** (mit Quotes → 400 „expected UUID, actual STRING").
+  **Nicht filterbar** (400 `api.request.invalid-filter`): `action.*`,
+  `enabled.*` — sie stehen auch nicht in der OpenAPI-10.4.57-Filtertabelle
+  (dort nur `id`, `name`, `source.zoneId`, `destination.zoneId`,
+  `metadata.origin`).
+- **Ordering-Endpunkt:** `GET /firewall/policies/ordering` verlangt
+  **beide** Parameter `sourceFirewallZoneId` + `destinationFirewallZoneId`
+  (je 400, wenn einer fehlt); liefert die Evaluationsreihenfolge des
+  Zonenpaars als ID-Listen `beforeSystemDefined` / `afterSystemDefined`.
+  Die Reihenfolge ist zudem an `index` der Policies ablesbar
+  (niedriger = zuerst).
+- `trafficFilter`-Typen (diskriminiert über `type`): Source u. a.
+  `IP_ADDRESS` (+MAC, +Ports), `NETWORK`, `MAC_ADDRESS`, `PORT`, `REGION`,
+  `SITE_TO_SITE_VPN_TUNNEL`, `VPN_SERVER`, `IPV6_IID`; Destination u. a.
+  `APPLICATION`, `APPLICATION_CATEGORY`, `DOMAIN`, `IP_ADDRESS`, `NETWORK`,
+  `PORT`. IP-Filter referenzieren optional Traffic Matching Lists
+  (`trafficMatchingListId`); Port-Filter: `PORTS` (Werte/Range) oder
+  `TRAFFIC_MATCHING_LIST`.
+
+## 6. Zone-Based-Firewall nicht konfiguriert (⚠️, Historie)
+
+Bis 2026-09-21 war auf diesem Gateway die ZBF **nicht** konfiguriert:
+**beide** Endpunkte
 
 - `GET /sites/{site}/firewall/zones`
 - `GET /sites/{site}/firewall/policies`
 
-**HTTP 400** `api.firewall.zone-based-firewall-not-configured` zurück.
-
-→ Der MVP muss das als `unsupported` behandeln (nicht `error`), gemäß Design §40.
-Capability-Check in WP-4, so dass das Tool "Firewall auf diesem Gateway nicht
-konfiguriert" meldet statt einer rohen 400. Das ist ein Gateway-Konfigurationszustand,
-kein Auth-/Parameterfehler.
+lieferten **HTTP 400** `api.firewall.zone-based-firewall-not-configured`
+zurück. Das Verhalten gilt weiterhin für Gateways ohne ZBF und wird als
+`unsupported` behandelt (nicht `error`), gemäß Design §40. Capability-Check
+in WP-4, so dass das Tool "Firewall auf diesem Gateway nicht konfiguriert"
+meldet statt einer rohen 400. Das ist ein Gateway-Konfigurationszustand,
+kein Auth-/Parameterfehler. Seit 2026-09-21 ist die ZBF hier konfiguriert
+(§5e); die `unsupported`-Pfade bleiben getestet (Unit/E2E mit 400-Fixtures).
 
 ## 7. Klartext-Secrets in API-Antworten (⚠️ Redaction)
 

@@ -72,7 +72,7 @@ def register_tools(
 #: The tool groups registered by the server (read-only MVP, WP-7–10).
 #:
 #: Write/action/delete groups (gated by their feature flags) are added from
-#: WP-13 onward and must stay absent while their flag is off.
+#: WP-14 onward and must stay absent while their flag is off.
 TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup(name="system", gate=always_on, register=register_system_tools),
     ToolGroup(name="sites", gate=always_on, register=register_site_tools),
