@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.devices import clamp_params
 from unifi_mcp.tools.errors import NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
@@ -43,7 +48,9 @@ Gets the full configuration of one network (VLAN) by id, including the IPv4
 and DHCP settings (host address, prefix length, DHCP mode and address range)
 and per-network options such as isolation. Obtain ids from list_networks.
 Returns a structured not_found error when no network has the given id.
-This tool is read-only.
+The result includes a state_hash of the object; write tools (if enabled)
+require it as expected_state_hash to prevent stale writes. This tool is
+read-only.
 """
 
 
@@ -63,8 +70,7 @@ def register_network_tools(server: MCPServer, client: UniFiClient, settings: Set
             data = await client.get(f"/sites/{site}/networks/{network_id}")
         except UniFiNotFoundError:
             raise NotFoundError(resource="network", query=network_id) from None
-        normalized: dict[str, Any] = normalize(data, level="detail")
-        return normalized
+        return with_state_hash(normalize(data, level="detail"))
 
     server.add_tool(
         wrap_tool("list_networks", settings.max_tool_response_bytes, list_networks),

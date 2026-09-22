@@ -285,6 +285,15 @@ Seit 2026-09-21 ist auf diesem Gateway die Zone-Based-Firewall konfiguriert
     `and(…)`).
   - **Nicht filterbar** (400 `api.request.invalid-filter`):
     `metadata.origin` — im Gegensatz zu anderen Ressourcen.
+  - ⚠️ **DNS-Seite im UI ≠ `list_dns_policies`:** Das UI listet neben
+    expliziten DNS-Policies auch Hostnamen aus **DHCP-Reservierungen**
+    (Device-Context im UI anlegbar). Reservierungen sind in der v1-API
+    inexistent (kein Endpunkt, kein Feld — Spec 10.6.106 enthält kein
+    „reservation“-Token), und auf dem UCG ist die Legacy-API für
+    API-Key-Sessions site-scoped blockiert (alle `/api/s/…`-Pfade →
+    401 `api.err.NoSiteContext`, nur `/api/self` funktioniert). Die 3
+    fehlenden Einträge (UI 9, API 6) sind diese Reservierungen — nicht
+    über die lokale API abrufbar (2026-09-22 verifiziert).
 - **ACL-Ordering** `GET /sites/{site}/acl-rules/ordering`: 200, **keine
   Query-Parameter** (im Gegensatz zum Zonenpaar-Ordering der
   Firewall-Policies). `{orderedAclRuleIds[]}`; die Listenposition entspricht
@@ -373,3 +382,40 @@ Mitigation (dokumentiert, im Deploy-Repo erzwungen):
 - `insecure`: Verifikation aus, nur für lokale Entwicklung + prominentes Warnlog.
 - `certs/gateway.crt` (dieses Repo) ist nur **lokales Dev-Komfort** — die Produktions-CA
   kommt aus einem SOPS-Secret im Deploy-Repo.
+
+## 11. Write-Endpunkte (WP-14, aus OpenAPI 10.6.106 analysiert)
+
+32 nicht-GET-Operationen. Befunde aus der OpenAPI-Spec — **vor dem ersten
+Live-Write erneut verifizieren** (WP-14 ist nur Fundament, noch kein echtes
+Write-Tool):
+
+- **Updates sind Full-Replace-PUTs** — jeder `PUT …/{id}` nimmt ein
+  „Create or update"-DTO (komplettes Objekt) und liefert das aktualisierte
+  Detail-Objekt (HTTP 200). Es gibt kein Teil-PUT.
+- **Update-DTOs omitieren server-managed Felder:** `id`, `metadata`, `etag`,
+  `revision` sind im Detail-Read vorhanden, aber in **keinem** Update-DTO.
+  Sie müssen vor dem PUT aus dem Body gestrippt werden, sonst werden sie
+  ans Gateway echoed. (→ `_SERVER_MANAGED_FIELDS` in `tools/writes.py`.)
+- **Einziges PATCH:** `PATCH /sites/{site}/firewall/policies/{id}` (nur
+  `loggingEnabled`); alle anderen Mutationen sind PUT (Update) oder POST
+  (Create).
+- **POST = Create, nicht idempotent** → im Client **nie** retryen (ein
+  doppelter Create wäre schlimmer als ein gemeldeter Fehler).
+  **PUT = idempotent** → Standard-Retry-Policy (5xx/429/Transport) ok.
+- **`metadata.origin` nur `USER_DEFINED` ist modifizierbar** (live WP-10/13:
+  System-/abgeleitete Objekte tragen `SYSTEM_DEFINED` etc.) → Write-Guard
+  lehnt alle anderen Origin-Werte ab (fail-closed, fehlender Origin = Reject).
+- **ACL-`index` im PUT deprecated/wirkungslos** — die Reihenfolge wird über
+  `PUT /acl-rules/ordering` gesteuert (WP-13b), nicht über das `index`-Feld.
+- **WiFi-PUT verlangt Klartext-PSK** — das Full-Replace-DTO round-trippt
+  `securityConfiguration.passphrase`. Der Write-Pfad baut den Body daher aus
+  dem **rohen** (unredigierten) Objekt; der PSK bleibt im Prozess und wird nie
+  an das LLM ausgegeben (Design §8/§33).
+- **Legacy-API `/api/s/…` ist für API-Key-Sessions blockiert** (401
+  `api.err.NoSiteContext`, nur `/api/self` ok) → Writes laufen ausschließlich
+  über die v1-Integration-API.
+
+→ Fundament für Design §14/§15/§16/§27: `state_hash` über den normalisierten
+  Detail-Read, Read-before-write gegen frischen Fetch (§29), Field-Allowlists,
+  Full-Replace-PUT aus dem rohen Objekt, Write-Audit-Log (auch für abgelehnte
+  Versuche).

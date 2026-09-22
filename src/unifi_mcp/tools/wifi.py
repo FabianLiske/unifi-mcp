@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING, Any
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.devices import clamp_params
 from unifi_mcp.tools.errors import NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
@@ -43,7 +48,9 @@ Gets the full configuration of one WiFi broadcast profile (SSID) by id,
 including the security mode, the linked network, and band settings. The WiFi
 passphrase (PSK) is redacted and never returned by this tool. Obtain ids from
 list_wifi. Returns a structured not_found error when no broadcast has the
-given id. This tool is read-only.
+given id. The result includes a state_hash of the object; write tools (if
+enabled) require it as expected_state_hash to prevent stale writes. This
+tool is read-only.
 """
 
 
@@ -63,8 +70,7 @@ def register_wifi_tools(server: MCPServer, client: UniFiClient, settings: Settin
             data = await client.get(f"/sites/{site}/wifi/broadcasts/{broadcast_id}")
         except UniFiNotFoundError:
             raise NotFoundError(resource="wifi_broadcast", query=broadcast_id) from None
-        normalized: dict[str, Any] = normalize(data, level="detail")
-        return normalized
+        return with_state_hash(normalize(data, level="detail"))
 
     server.add_tool(
         wrap_tool("list_wifi", settings.max_tool_response_bytes, list_wifi),

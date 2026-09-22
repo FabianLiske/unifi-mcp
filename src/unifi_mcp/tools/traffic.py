@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
 from unifi_mcp.unifi.normalization import clamp_limit, normalize
@@ -37,7 +42,9 @@ DESCRIPTION_GET = """\
 Returns one traffic matching list by the id returned by
 list_traffic_matching_lists, including all of its entries (subnets, IP
 addresses, or port numbers). Pass site_id to look in another site. Unknown
-ids return a not_found error. This tool is read-only.
+ids return a not_found error. The result includes a state_hash of the list;
+write tools (if enabled) require it as expected_state_hash to prevent stale
+writes. This tool is read-only.
 """
 
 
@@ -67,7 +74,7 @@ async def _get_tml_detail(client: UniFiClient, path: str, tml_id: str) -> dict[s
         data = await client.get(path)
     except UniFiNotFoundError as exc:
         raise NotFoundError(resource="traffic_matching_list", query=tml_id) from exc
-    return cast("dict[str, Any]", normalize(data, level="detail"))
+    return with_state_hash(cast("dict[str, Any]", normalize(data, level="detail")))
 
 
 def register_traffic_tools(server: MCPServer, client: UniFiClient, settings: Settings) -> None:

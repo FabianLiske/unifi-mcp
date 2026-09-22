@@ -33,7 +33,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.devices import clamp_params
 from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
@@ -58,7 +63,9 @@ GET_FIREWALL_ZONE_DESCRIPTION = """\
 Gets one zone-based firewall zone by id. When the gateway has not set up the
 zone-based firewall, returns a structured 'unsupported' error; when no zone
 has the given id, a structured not_found error. Obtain ids from
-list_firewall_zones. This tool is read-only.
+list_firewall_zones. The result includes a state_hash of the zone; write
+tools (if enabled) require it as expected_state_hash to prevent stale
+writes. This tool is read-only.
 """
 
 LIST_FIREWALL_POLICIES_DESCRIPTION = """\
@@ -83,7 +90,9 @@ list_firewall_policies, including the full source/destination traffic
 filters (network ids, IP addresses or subnets, port ranges, DPI
 applications). Pass site_id to look in another site. Unknown ids return a
 not_found error; when the gateway has not set up the zone-based firewall,
-returns a structured 'unsupported' error. This tool is read-only.
+returns a structured 'unsupported' error. The result includes a state_hash
+of the policy; write tools (if enabled) require it as expected_state_hash
+to prevent stale writes. This tool is read-only.
 """
 
 GET_FIREWALL_POLICY_ORDERING_DESCRIPTION = """\
@@ -174,8 +183,7 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
             data = await client.get(f"/sites/{site}/firewall/zones/{zone_id}")
         except UniFiNotFoundError:
             raise NotFoundError(resource="firewall_zone", query=zone_id) from None
-        normalized: dict[str, Any] = normalize(data, level="detail")
-        return normalized
+        return with_state_hash(normalize(data, level="detail"))
 
     async def list_firewall_policies(
         site_id: str | None = None,
@@ -204,8 +212,7 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
             data = await client.get(f"/sites/{site}/firewall/policies/{policy_id}")
         except UniFiNotFoundError:
             raise NotFoundError(resource="firewall_policy", query=policy_id) from None
-        normalized: dict[str, Any] = normalize(data, level="detail")
-        return normalized
+        return with_state_hash(normalize(data, level="detail"))
 
     async def get_firewall_policy_ordering(
         source_zone_id: str,

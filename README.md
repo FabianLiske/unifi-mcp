@@ -78,11 +78,12 @@ Laden über `pydantic-settings`; echte Umgebungsvariablen überschreiben Werte a
 | `MCP_BIND_PORT` | `8000` | Port von `/mcp`, `/healthz`, `/readyz` |
 | `LOG_LEVEL` | `INFO` | `DEBUG` … `CRITICAL` |
 | `LOG_FORMAT` | `json` | `json` oder `text` |
-| `ENABLE_WRITE_TOOLS` | `false` | Feature-Flag (MVP: aus, Tools nicht implementiert) |
+| `ENABLE_WRITE_TOOLS` | `false` | Feature-Flag. Safe-Writes-Fundament ist implementiert (WP-14); erste echte Write-Tools folgen in WP-15 — solange Flag aus, bleiben alle Tools read-only |
 | `ENABLE_ACTION_TOOLS` | `false` | Feature-Flag (MVP: aus, Tools nicht implementiert) |
 | `ENABLE_DELETE_TOOLS` | `false` | Feature-Flag (MVP: aus, Tools nicht implementiert) |
 | `MAX_LIST_ITEMS` | `200` | Obergrenze für List-Tools (limit-Parameter) |
 | `MAX_TOOL_RESPONSE_BYTES` | `262144` | Harte Obergrenze der Tool-Response in Bytes |
+| `AUDIT_LOG_PATH` | leer | leer = Write-Audit nur auf stdout; Pfad = zusätzlich JSONL-Append je Write-Versuch (Design §27). Parent-Directory muss existieren |
 
 ## Docker Build
 
@@ -227,7 +228,15 @@ Hinweis: Im Design-Doc sind zusätzlich `get_device`, `get_device_stats` und `li
 
 ## Read/Write-Sicherheitsmodell
 
-- **Read-only-Default:** Es werden nur Read-Tools registriert. Write/Action/Delete-Gruppen hängen hinter den Feature-Flags `ENABLE_WRITE_TOOLS` / `ENABLE_ACTION_TOOLS` / `ENABLE_DELETE_TOOLS` (alle `false`) und werden beim Gating **bei der Registrierung** übersprungen — abgeschaltete Tools fehlen in `tools/list` komplett, statt erst zur Laufzeit abgelehnt zu werden. Im MVP sind Write-Tools zudem noch gar nicht implementiert.
+- **Read-only-Default:** Es werden nur Read-Tools registriert. Write/Action/Delete-Gruppen hängen hinter den Feature-Flags `ENABLE_WRITE_TOOLS` / `ENABLE_ACTION_TOOLS` / `ENABLE_DELETE_TOOLS` (alle `false`) und werden beim Gating **bei der Registrierung** übersprungen — abgeschaltete Tools fehlen in `tools/list` komplett, statt erst zur Laufzeit abgelehnt zu werden. Im MVP sind die echten Write-Tools noch nicht enthalten; das **Safe-Writes-Fundament** (WP-14) ist dagegen schon da (siehe unten).
+- **Safe-Writes-Fundament (WP-14):** Die Basis für spätere Write-Tools ist implementiert und durch E2E-Tests abgesichert, auch wenn kein echtes Write-Tool aktiv ist:
+  - **`state_hash`:** Jedes `get_*` für veränderbare Objekte (`get_wifi`, `get_network`, `get_acl_rule`, `get_firewall_zone`, `get_firewall_policy`, `get_traffic_matching_list`, `get_dns_policy`) liefert zusätzlich einen `sha256:`-Hash über die normalisierte, secret-freie Darstellung. Volatile Laufzeit-Stats und Secrets wirken nicht auf den Hash.
+  - **Read-before-write:** Ein Write holt das Objekt **neu** (nie gecacht) und vergleicht den aktuellen Hash mit `expected_state_hash`; bei Abweichung wird **nicht** geschrieben → Fehler `state_changed` (mit `current_state_hash` zum Sofort-Retry).
+  - **Modifiability-Guard:** Nur Objekte mit `metadata.origin == USER_DEFINED` sind schreibbar; System-/abgeleitete Objekte werden abgelehnt (fail-closed).
+  - **Field-Allowlist:** Nur explizit erlaubte Top-Level-Felder dürfen sich ändern; alles andere → `validation`-Fehler, keine Teil-Anwendung.
+  - **Full-Replace-PUT:** UniFi-Updates sind komplette Objekte — der Body wird aus dem rohen (unredigierten) Objekt gebildet, server-managed Felder (`id`, `metadata`, `etag`, `revision`) werden gestrippt, der (geheimnis-)empfindliche Teil bleibt im Prozess.
+  - **Audit-Log (Design §27):** Jeder Write-*Versuch* (erfolgreich **und** abgelehnt) wird redigiert protokolliert — Default stdout, optional zusätzlich als JSONL in `AUDIT_LOG_PATH`.
+  - **Client:** `put()` (idempotent, wird bei transienten Fehlern retried) und `post()` (Create, **nie** retried) ergänzen den Read-Client.
 - **Bearer-Auth:** `/mcp` verlangt `Authorization: Bearer <MCP_AUTH_TOKEN>` (Konstantenzeit-Vergleich); fehlendes Token → 401, falsches Token → 403, inkl. Auth-Failure-Metrik. `/healthz` und `/readyz` sind bewusst öffentlich (Kubernetes-Probes senden kein Token).
 - **Redaction:** Alle UniFi-Antworten werden vor dem LLM-Output rekursiv nach Feldnamen redigiert (case-insensitiv, `apiKey`/`api_key`/`API-Key` matchen gleich): u. a. `password`, `passphrase`, `psk`, `secret`, `token`, `apikey`, `privatekey`, `credential`, `authorization` → `[REDACTED]`. Der Key bleibt sichtbar, der Wert wird ersetzt. Over-Redaction ist beabsichtigt.
 - **Limits und Pagination:** List-Tools liefern max. `MAX_LIST_ITEMS` (200) Einträge pro Aufruf mit `next_offset`; jede Tool-Response ist hart auf `MAX_TOOL_RESPONSE_BYTES` (256 KiB) begrenzt.
@@ -239,7 +248,7 @@ Hinweis: Im Design-Doc sind zusätzlich `get_device`, `get_device_stats` und `li
 ## Tests
 
 - `tests/unit/` — Unit-Tests: Config/Validierung, UniFi-Client (Auth, Timeouts, Error-Mapping 401/403/404/429), TLS-Modi, Redaction, Normalisierung, Auth-Middleware, Metriken, Logging, Readiness sowie je Modul Registration- und Verhaltenstests der Tools (mit `respx`-Mocks).
-- `tests/integration/` — MCP-Contract-Test (stateless Streamable HTTP, Bearer-Auth, Tool-Liste) und E2E-Tests gegen eine Fake-UniFi-API (gesamter Pfad: Client → Tool → redigierter Output).
+- `tests/integration/` — MCP-Contract-Test (stateless Streamable HTTP, Bearer-Auth, Tool-Liste) und E2E-Tests gegen eine Fake-UniFi-API (gesamter Pfad: Client → Tool → redigierter Output). `test_write_e2e.py` übt das Safe-Writes-Fundament (WP-14) über einen nur-zur-Test-Write-Tool: Gating per Feature-Flag, `state_changed` ohne PUT, Allowlist-/Origin-Guards, genau ein Full-Replace-PUT bei korrektem Hash, Audit-Log.
 - `tests/fixtures/` — Platzhalter für API-Response-Fixtures.
 
 ```bash

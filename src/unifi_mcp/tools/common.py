@@ -19,7 +19,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from unifi_mcp.observability.logging import get_logger
-from unifi_mcp.observability.metrics import record_mcp_request
+from unifi_mcp.observability.metrics import record_mcp_request, record_write_request
+from unifi_mcp.safety.state_hash import compute_state_hash
 from unifi_mcp.tools.errors import NotFoundError, ToolError, check_response_size
 from unifi_mcp.unifi.errors import (
     UniFiAuthenticationError,
@@ -65,11 +66,15 @@ _ERROR_CODE_BY_TYPE: tuple[tuple[type[UniFiError], str], ...] = (
 )
 
 
-def wrap_tool(name: str, max_response_bytes: int, fn: ToolFn) -> ToolFn:
+def wrap_tool(
+    name: str, max_response_bytes: int, fn: ToolFn, *, write: bool = False
+) -> ToolFn:
     """Wrap a tool implementation with metrics, size cap, and error mapping.
 
     ``functools.wraps`` keeps *fn*'s signature so the MCP SDK still derives
-    the tool's input schema from its typed parameters.
+    the tool's input schema from its typed parameters. Pass ``write=True``
+    for mutating tools so they are additionally recorded via
+    ``record_write_request`` (design §28 ``unifi_mcp_write_requests_total``).
     """
 
     @functools.wraps(fn)
@@ -90,6 +95,8 @@ def wrap_tool(name: str, max_response_bytes: int, fn: ToolFn) -> ToolFn:
             payload = dict(_INTERNAL_ERROR_PAYLOAD)
             status = "internal_error"
         record_mcp_request(name, status, time.monotonic() - started)
+        if write:
+            record_write_request(name, status)
         return payload
 
     return wrapper
@@ -186,3 +193,16 @@ async def fetch_list(
     """
     page = await client.get_list(path, params=params)
     return page_to_mcp(page, level="summary")
+
+
+def with_state_hash(detail: dict[str, Any]) -> dict[str, Any]:
+    """Return *detail* with a ``state_hash`` key appended (design §14).
+
+    *detail* is the normalized detail representation; the hash is computed
+    over exactly what the LLM sees, so a write guarded against this value
+    cannot be fooled by normalization or key-order differences. The input
+    dict is not mutated.
+    """
+    out = dict(detail)
+    out["state_hash"] = compute_state_hash(detail)
+    return out

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from unifi_mcp.auth.middleware import BearerAuthMiddleware
 from unifi_mcp.config import Settings, get_settings
 from unifi_mcp.observability import logging as app_logging
+from unifi_mcp.safety.audit import get_audit_log
 from unifi_mcp.server import ReadinessProbe, build_server, mcp_starlette
 from unifi_mcp.unifi.client import UniFiClient
 
@@ -40,6 +41,10 @@ def create_app(
     *groups* overrides the default tool groups (see :func:`build_server`).
     """
     readiness = ReadinessProbe(client)
+    # Initialize the write audit log (design §27) with the configured sink
+    # up front: the JSONL file is opened at startup, so a broken AUDIT_LOG_PATH
+    # surfaces immediately (warning + stdout fallback), not on the first write.
+    get_audit_log(settings.audit_log_path or None)
     server = build_server(settings, client, readiness, groups=groups)
     starlette_app = mcp_starlette(server, settings)
     return BearerAuthMiddleware(

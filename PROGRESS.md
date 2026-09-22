@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-22 (WP-0 … WP-13b done)
+Stand: 2026-09-22 (WP-0 … WP-14 done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -42,7 +42,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-12 | Tests, Smoke, README, DoD              | 3        | done        | WP-7–11   |
 | WP-13 | ZBF Policies (Read)                    | 3        | done        | WP-12     |
 | WP-13b| Read-Tools: Device-Detail, DNS, ACL-Ordering, Pending | 3 | done | WP-13 |
-| WP-14 | Safe-Writes-Fundament                  | post-MVP | open        | WP-13     |
+| WP-14 | Safe-Writes-Fundament                  | post-MVP | done        | WP-13     |
 | WP-15 | Erste Write-Tools                      | post-MVP | open        | WP-14     |
 | WP-16 | Restliche Write-Tools                  | post-MVP | open        | WP-15     |
 | WP-17 | Actions                                | post-MVP | open        | WP-16     |
@@ -334,11 +334,27 @@ Status: `done`
 
 ### WP-14 — Safe-Writes-Fundament
 
-`state_hash` (stabil, Key-Reihenfolge-unabhängig, volatile Stats ignoriert), read-before-write-Guard, Patch-Semantik statt Replace, Field-Allowlists, Write-Guards, Audit-Log (redigiert), `ENABLE_WRITE_TOOLS`.
+Basis für spätere Write-Tools (WP-15/16), **ohne** echte Write-Tools: `state_hash` (stabil, Key-Reihenfolge-unabhängig, volatile Stats + Secrets ignoriert), Read-before-write-Guard, Modifiability-Guard (`metadata.origin == USER_DEFINED`, fail-closed), Field-Allowlist, Full-Replace-PUT-Client, Audit-Log (redigiert, stdout + optional JSONL).
 
 Abnahme: §35 Write-Guard-Tests: Flag aus → Tool nicht registriert; falscher Hash → kein Write; nicht erlaubtes Feld → kein Write; korrekter Hash → genau ein Write.
 
-Status: `open`
+- [x] **Live-Discovery (WP-14, 10.6.106):** 32 non-GET-Operationen im OpenAPI-Spec; **alle Updates Full-Replace-PUT** (POST/PUT teilen sich das DTO), PUT 200 liefert aktualisiertes Detail-Objekt; einziger `PATCH` = Firewall-Policy `loggingEnabled`; **kein `revision`/`etag`/`If-Match`** im Spec → client-seitiger Hash zwingend; nur `metadata.origin == USER_DEFINED` modifizierbar; ACL-`index` im PUT wirkungslos (Ordering-Endpoint ist separat); WiFi-PUT round-trippt Klartext-PSK → Write-Pfad nutzt **rohes** (unredigiertes) Objekt, PSK bleibt im Prozess; Details in `docs/unifi-api-notes.md` §11
+- [x] `safety/state_hash.py`: `compute_state_hash()` → `"sha256:<hex>"` über kanonisches JSON (sortierte Keys) der normalisierten, secret-freien Darstellung; `VOLATILE_FIELDS` (uptime, rx/tx, lastSeen …) ignoriert; **Präsenz** eines redigierten Feldes ändert den Hash, sein **Wert** nicht
+- [x] `safety/guards.py`: `verify_expected_state()` (frischer GET, nie gecacht, `hmac.compare_digest` → rohes Objekt), `assert_user_defined()` (fail-closed), `apply_patch()` (Top-Level-Field-Allowlist → `(merged, diff)`, kein Teil-Apply)
+- [x] `safety/audit.py`: `AuditLog` (JSONL + `flush`), `redact()`, stdout-Fallback bei Open-/Write-Fehlern (kein Crash), Prozess-Singleton `get_audit_log()`/`reset_audit_log()`
+- [x] `tools/errors.py`: `StateMismatchError` (code `state_changed`, Felder `resource` + `current_state_hash` zum Sofort-Retry)
+- [x] `unifi/client.py`: `put()` (idempotent, wird bei transienten Fehlern geretryt) + `post()` (Create, **nie** geretryt)
+- [x] `config.py`: `audit_log_path` (Default `""` = stdout-only); `.env.example` + `conftest` `ENV_KEYS` + `mcp_app_factory(**settings_overrides)`
+- [x] `tools/common.py`: `with_state_hash(detail)` + `wrap_tool(..., write=False)` (`record_write_request`); 7 Detail-Tools liefern jetzt `state_hash`: `get_wifi`, `get_network`, `get_acl_rule`, `get_firewall_zone`, `get_firewall_policy`, `get_traffic_matching_list`, `get_dns_policy` (Clients/Devices korrekt **ohne** — nicht per Update-DTO mutierbar)
+- [x] `tools/writes.py`: `guarded_update()` — verify → origin → apply_patch → `_strip_server_managed` (`id` + `INTERNAL_FIELDS` = {metadata, etag, revision}) → `client.put` → frischer `state_hash`; jeder Rejection-Exit audited; `changes` = diff nur bei Write-Exit
+- [x] **Unit-Tests:** `test_state_hash.py`, `test_guards.py`, `test_client_writes.py` (PUT-Body/Retry, POST no-retry, Body nie geloggt), `test_audit.py` (JSONL/Append/Redaction/Fallback/Singleton), `test_tools_errors.py` (`state_changed`-Shape), `test_config.py`
+- [x] **E2E (Abnahme, §35):** `tests/integration/test_write_e2e.py` (6 Tests) per nur-zur-Test-Write-Tool in synthetischer `WRITE_GROUP`: Flag off → 26 Tools (kein Write-Tool), Flag on → 27 + `read_only_hint=False`; stale-Hash → `state_changed` + **0 PUT** + Audit; `metadata.origin ≠ USER_DEFINED` → `validation` (Field `metadata.origin`) + **0 PUT**; fremdes Feld → `validation` (Field `changes`, value `name`, allowed `[description]`) + **0 PUT**; korrekter Hash → **genau 1 PUT** (Body ohne `id`/`metadata`/`etag`/`revision`) + frischer `state_hash` + Audit `result: "ok"`
+- [x] Doku: `docs/unifi-api-notes.md` §11 „Write-Endpunkte", README (Safe-Writes-Fundament-Abschnitt + `AUDIT_LOG_PATH`), `.env.example`
+- [x] Lokal: ruff + mypy strict (38 Dateien) + pytest (427 Tests) grün
+- [x] Live-Smoke (Read-only) gegen UCG (10.6.106): Gateway erreichbar, Site aufgelöst, `state_hash` über zwei unabhängige Reads einer ACL-Regel **stabil** (identisch)
+- [ ] Live-Write (ACL-`description`) — **bewusst vom User abgesagt**: alle 4 ACL-Regeln haben `description=None` (kein Platzhalter wie vermutet); Write-Pfad ist bereits per E2E (Fake-API) + Live-Read (Hash-Stabilität) abgedeckt
+
+Status: `done`
 
 ### WP-15 — Erste Write-Tools
 

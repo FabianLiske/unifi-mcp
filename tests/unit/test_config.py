@@ -38,6 +38,7 @@ def test_defaults(clean_env) -> None:
     assert s.enable_delete_tools is False
     assert s.max_list_items == 200
     assert s.max_tool_response_bytes == 262144
+    assert s.audit_log_path == ""
 
 
 def test_base_url_strips_trailing_slash(clean_env) -> None:

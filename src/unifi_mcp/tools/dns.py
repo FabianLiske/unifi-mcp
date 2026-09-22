@@ -20,7 +20,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.devices import clamp_params
 from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
@@ -48,7 +53,9 @@ DESCRIPTION_GET = """\
 Returns one DNS policy by the id returned by list_dns_policies, including
 the record-specific fields for its type (ipv4Address for A records,
 targetDomain for CNAME, the forwarder address for forward domains, ...).
-Unknown ids return a not_found error. This tool is read-only.
+Unknown ids return a not_found error. The result includes a state_hash of
+the policy; write tools (if enabled) require it as expected_state_hash to
+prevent stale writes. This tool is read-only.
 """
 
 #: user-friendly ``record_type`` value -> UniFi policy ``type`` enum (live-verified).
@@ -130,7 +137,7 @@ def register_dns_tools(server: MCPServer, client: UniFiClient, settings: Setting
             data = await client.get(f"/sites/{site}/dns/policies/{policy_id}")
         except UniFiNotFoundError as exc:
             raise NotFoundError(resource="dns_policy", query=policy_id) from exc
-        return cast("dict[str, Any]", normalize(data, level="detail"))
+        return with_state_hash(cast("dict[str, Any]", normalize(data, level="detail")))
 
     server.add_tool(
         wrap_tool("list_dns_policies", settings.max_tool_response_bytes, list_dns_policies),

@@ -47,6 +47,7 @@ ENV_KEYS = (
     "ENABLE_DELETE_TOOLS",
     "MAX_LIST_ITEMS",
     "MAX_TOOL_RESPONSE_BYTES",
+    "AUDIT_LOG_PATH",
 )
 
 
@@ -228,18 +229,22 @@ def mcp_app_factory(respx_mock, make_client, make_settings):
     ``GET /info`` is mocked so ``/readyz`` resolves deterministically without a
     real gateway. Pass *groups* to register a different (e.g. a single new)
     tool group instead of the default :data:`~unifi_mcp.tools.registry.TOOL_GROUPS`.
+    Pass additional keyword arguments to override the default :class:`Settings`
+    (e.g. ``enable_write_tools=True`` for the WP-14 write path).
 
     Usage::
 
         async with mcp_app_factory() as (app, settings): ...
         async with mcp_app_factory(groups=TOOL_GROUPS + (my_group,)) as (app, settings): ...
+        async with mcp_app_factory(enable_write_tools=True) as (app, settings): ...
     """
 
     @asynccontextmanager
     async def _factory(
         groups: tuple[ToolGroup, ...] | None = None,
+        **settings_overrides: object,
     ) -> AsyncIterator[tuple[Any, Settings]]:
-        settings = make_settings()
+        settings = make_settings(**settings_overrides)
         client = await make_client(settings)
         respx_mock.get("http://gateway.test/proxy/network/integration/v1/info").mock(
             return_value=httpx.Response(200, json={"applicationVersion": "10.6.101"})

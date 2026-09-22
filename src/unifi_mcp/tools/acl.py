@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from mcp_types import ToolAnnotations
 
-from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
+from unifi_mcp.tools.common import (
+    fetch_list,
+    resolve_site,
+    with_state_hash,
+    wrap_tool,
+)
 from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
 from unifi_mcp.unifi.errors import UniFiNotFoundError
 from unifi_mcp.unifi.normalization import clamp_limit, normalize
@@ -44,7 +49,9 @@ DESCRIPTION_GET = """\
 Returns one ACL rule by the id returned by list_acl_rules, including the
 full source/destination endpoint filters (network ids, IP addresses or
 subnets, port ranges). Pass site_id to look in another site. Unknown ids
-return a not_found error. This tool is read-only.
+return a not_found error. The result includes a state_hash of the rule;
+write tools (if enabled) require it as expected_state_hash to prevent stale
+writes. This tool is read-only.
 """
 
 DESCRIPTION_ORDERING = """\
@@ -147,7 +154,7 @@ async def _get_acl_rule_detail(client: UniFiClient, path: str, rule_id: str) -> 
         data = await client.get(path)
     except UniFiNotFoundError as exc:
         raise NotFoundError(resource="acl_rule", query=rule_id) from exc
-    return cast("dict[str, Any]", normalize(data, level="detail"))
+    return with_state_hash(cast("dict[str, Any]", normalize(data, level="detail")))
 
 
 def register_acl_tools(server: MCPServer, client: UniFiClient, settings: Settings) -> None:

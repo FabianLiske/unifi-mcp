@@ -67,6 +67,28 @@ class InvalidValueError(ToolError):
         super().__init__(message or default, field=field, value=value, allowed=allowed)
 
 
+class StateMismatchError(ToolError):
+    """The object changed between the read and the write (design §14).
+
+    Carries the *current* hash so the LLM can either retry immediately with
+    the fresh value or re-fetch the object for a full diff.
+    """
+
+    code = "state_changed"
+
+    def __init__(
+        self,
+        resource: str,
+        *,
+        current_state_hash: str,
+        message: str | None = None,
+    ) -> None:
+        default = "The object changed since it was read. Fetch it again before updating."
+        super().__init__(
+            message or default, resource=resource, current_state_hash=current_state_hash
+        )
+
+
 class ResponseTooLargeError(ToolError):
     """Tool output exceeded the hard response size limit (design §12)."""
 

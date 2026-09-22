@@ -207,6 +207,24 @@ class UniFiClient:
         """Issue a GET and return the parsed JSON payload."""
         return await self._request("GET", path, params=params)
 
+    async def put(self, path: str, *, json: Any = None) -> Any:
+        """Issue a PUT with an optional JSON body (full-replace semantics).
+
+        The UniFi v1 update endpoints are PUTs that expect the *complete*
+        object. PUT is idempotent, so the standard transient-failure retry
+        policy applies.
+        """
+        return await self._request("PUT", path, json_body=json)
+
+    async def post(self, path: str, *, json: Any = None) -> Any:
+        """Issue a POST (create) with an optional JSON body.
+
+        POST is *not* idempotent: a transport failure may have executed the
+        request server-side, so the call is never retried — a doubled create
+        is worse than a reported failure.
+        """
+        return await self._request("POST", path, json_body=json, retry=False)
+
     async def get_list(self, path: str, *, params: dict[str, Any] | None = None) -> Page:
         """Issue a GET on a list endpoint and return the paging envelope."""
         data = await self.get(path, params=params)
@@ -255,15 +273,19 @@ class UniFiClient:
         path: str,
         *,
         params: dict[str, Any] | None = None,
+        json_body: Any = None,
+        retry: bool = True,
     ) -> Any:
         settings = self._settings
-        max_attempts = 1 + settings.unifi_max_retries
+        max_attempts = 1 + settings.unifi_max_retries if retry else 1
         endpoint_group = path.lstrip("/").split("/", 1)[0] or "root"
         for attempt in range(1, max_attempts + 1):
             started = time.monotonic()
             response: httpx.Response | None = None
             try:
-                request = self._http.build_request(method, path, params=params)
+                request = self._http.build_request(
+                    method, path, params=params, json=json_body
+                )
                 response = await self._http.send(request, stream=True)
                 body = await self._read_body_with_cap(response, settings.max_tool_response_bytes)
                 status = response.status_code

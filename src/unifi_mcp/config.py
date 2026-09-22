@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     max_list_items: int = Field(default=200, gt=0)
     max_tool_response_bytes: int = Field(default=262144, gt=0)
 
+    # --- Write audit log (design §27) ---
+    # Empty = stdout only (default). Set to a file path (e.g. a host mount
+    # at /var/log/unifi-mcp/audit.jsonl) to additionally append every write
+    # attempt as JSONL; the parent directory must exist.
+    audit_log_path: str = ""
+
     @field_validator("unifi_base_url")
     @classmethod
     def _check_base_url(cls, value: str) -> str:

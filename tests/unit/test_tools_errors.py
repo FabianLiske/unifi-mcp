@@ -8,6 +8,7 @@ from unifi_mcp.tools.errors import (
     AmbiguousMatchError,
     NotFoundError,
     ResponseTooLargeError,
+    StateMismatchError,
     ToolError,
     check_response_size,
 )
@@ -82,3 +83,29 @@ def test_check_response_size_large_payload_raises() -> None:
 def test_check_response_size_at_limit_is_ok() -> None:
     # Exactly at the limit is allowed (only strictly larger fails).
     assert check_response_size({"a": 1}, max_bytes=7) == 7
+
+
+def test_state_mismatch_shape_and_key_order() -> None:
+    current = "sha256:" + "ab" * 32
+    err = StateMismatchError("wifi_broadcast", current_state_hash=current)
+    data = err.to_dict()
+    assert data == {
+        "error": "state_changed",
+        "resource": "wifi_broadcast",
+        "current_state_hash": current,
+        "message": "The object changed since it was read. Fetch it again before updating.",
+    }
+    # Code first, message last (design §30); carries the current hash (§14).
+    assert list(data.keys()) == ["error", "resource", "current_state_hash", "message"]
+
+
+def test_state_mismatch_custom_message() -> None:
+    err = StateMismatchError(
+        "acl_rule", current_state_hash="sha256:" + "0" * 64, message="changed"
+    )
+    assert err.to_dict()["message"] == "changed"
+
+
+def test_state_mismatch_is_catchable_tool_error() -> None:
+    with pytest.raises(ToolError):
+        raise StateMismatchError("network", current_state_hash="sha256:" + "0" * 64)
