@@ -1,4 +1,4 @@
-"""Typed models for the official local UniFi Network API (v10.4.57 reference)."""
+"""Typed models for the official local UniFi Network API (v10.6.106 reference)."""
 
 from __future__ import annotations
 

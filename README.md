@@ -159,6 +159,9 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | Tool | Beschreibung |
 | --- | --- |
 | `list_devices` | Adoptierte Geräte (Gateways, Switches, Access Points) mit State, Modell, Firmware, IP; Filter `site_id`, `device_type`, `state`, `search` |
+| `get_device` | Detailobjekt eines Geräts per ID inkl. Firmware-Status, Features und Interfaces (Radios, Ports) |
+| `get_device_statistics` | Letzte Live-Statistiken eines Geräts: Uptime, CPU-/Speicherauslastung, Load-Average, Uplink-Raten |
+| `list_pending_devices` | Noch nicht adoptierte Geräte am Gateway (Top-Level-Endpunkt, kein `site_id`) |
 
 ### Clients
 
@@ -174,6 +177,13 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | --- | --- |
 | `list_networks` | Networks (VLANs) der Site mit Name, VLAN-ID, Status und Management-Zweck (Summary) |
 | `get_network` | Vollständige Konfiguration eines Networks (IPv4, DHCP, Isolation etc.) |
+
+### DNS
+
+| Tool | Beschreibung |
+| --- | --- |
+| `list_dns_policies` | DNS-Policies der Site (eigene DNS-Records und Forward-Domains) mit Typ, Domain, Record-Wert und enabled-Flag; Filter `site_id`, `record_type`, `domain` (Teilstring), `enabled` — alle gateway-seitig |
+| `get_dns_policy` | Eine DNS-Policy per ID inkl. typspezifischer Felder (`ipv4Address`, `targetDomain`, Forwarder-Adresse, …) |
 
 ### WiFi
 
@@ -198,6 +208,7 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | --- | --- |
 | `list_acl_rules` | ACL-Regeln mit Action, enabled-Flag, Regel-Index und Endpoint-Filtern (Summary); Filter `action`, `enabled`, `source`, `destination` |
 | `get_acl_rule` | Eine ACL-Regel inkl. vollständiger Source-/Destination-Filter |
+| `get_acl_rule_ordering` | Evaluationsreihenfolge aller ACL-Regeln der Site als ID-Liste (Liste = `index`-Reihenfolge, niedriger = zuerst) |
 
 ### Traffic
 

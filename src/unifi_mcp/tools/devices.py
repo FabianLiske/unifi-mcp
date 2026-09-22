@@ -1,9 +1,19 @@
-"""Device tools (design §10.3).
+"""Device tools (design §10.3; details WP-13b).
 
 The filter DSL is function-based and URL-encoded (docs/unifi-api-notes.md
 §3, live-verified in WP-2 and WP-7): ``field.fn('arg')``, composed with
 ``and(...)``. Enum values are UPPERCASE on the wire; device ``device_type``
 maps to a ``features.contains(...)`` clause.
+
+WP-13b additions (live-verified on 10.6.106, api-notes §5f):
+
+- detail: ``/sites/{site}/devices/{id}`` (features dict, physical
+  interfaces with ports/PoE; the list endpoint only reports interface
+  category names)
+- statistics: ``/sites/{site}/devices/{id}/statistics/latest`` (point-in-
+  time uptime/load/CPU/memory/uplink rates)
+- pending adoption: ``/pending-devices`` — **top-level, not site-scoped**
+  (no ``site_id`` parameter).
 """
 
 from __future__ import annotations
@@ -13,8 +23,9 @@ from typing import TYPE_CHECKING, Any
 from mcp_types import ToolAnnotations
 
 from unifi_mcp.tools.common import fetch_list, resolve_site, wrap_tool
-from unifi_mcp.tools.errors import InvalidValueError
-from unifi_mcp.unifi.normalization import clamp_limit
+from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
+from unifi_mcp.unifi.errors import UniFiNotFoundError
+from unifi_mcp.unifi.normalization import clamp_limit, normalize
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -31,6 +42,33 @@ at most 'limit' devices (default 50, max 200); when next_offset is set,
 call again with offset=next_offset to page. Note: devices report only the
 features they actually provide, so 'gateway' matches not every gateway
 model (e.g. some gateways report 'switch' instead). This tool is read-only.
+"""
+
+GET_DEVICE_DESCRIPTION = """\
+Gets the full detail object of one adopted device by id, including state,
+firmware, uplink device, feature details (e.g. switch LAGs), and physical
+interfaces (ports with speed and PoE state, radios). The list endpoint
+only reports interface category names — use this tool for port-level
+detail. Obtain ids from list_devices. Pass site_id to look in another
+site. Unknown ids return a not_found error. This tool is read-only.
+"""
+
+GET_DEVICE_STATISTICS_DESCRIPTION = """\
+Gets the latest statistics of one adopted device by id: uptime, load
+averages, CPU and memory utilization, uplink tx/rx rates, and per-interface
+statistics. These are point-in-time values (no history). Obtain ids from
+list_devices. Unknown device ids return a not_found error. This tool is
+read-only.
+"""
+
+LIST_PENDING_DEVICES_DESCRIPTION = """\
+Lists devices that are on the network but not yet adopted (top-level
+endpoint, not site-scoped): mac address, ip address, model, state,
+firmware, features, and the site ids they can be adopted into. Useful to
+debug why a newly connected switch or access point does not show up in
+list_devices. Returns at most 'limit' devices (default 50, max 200); when
+next_offset is set, call again with offset=next_offset to page. This tool
+is read-only.
 """
 
 #: user-friendly ``device_type`` value -> UniFi ``features`` entry (live-verified).
@@ -133,10 +171,64 @@ def register_device_tools(server: MCPServer, client: UniFiClient, settings: Sett
             params["filter"] = filter_expr
         return await fetch_list(client, f"/sites/{site}/devices", params=params)
 
+    async def get_device(device_id: str, site_id: str | None = None) -> dict[str, Any]:
+        site = await resolve_site(client, settings, site_id)
+        try:
+            data = await client.get(f"/sites/{site}/devices/{device_id}")
+        except UniFiNotFoundError:
+            raise NotFoundError(resource="device", query=device_id) from None
+        normalized: dict[str, Any] = normalize(data, level="detail")
+        return normalized
+
+    async def get_device_statistics(device_id: str, site_id: str | None = None) -> dict[str, Any]:
+        site = await resolve_site(client, settings, site_id)
+        try:
+            data = await client.get(f"/sites/{site}/devices/{device_id}/statistics/latest")
+        except UniFiNotFoundError:
+            raise NotFoundError(resource="device", query=device_id) from None
+        normalized: dict[str, Any] = normalize(data, level="detail")
+        return normalized
+
+    async def list_pending_devices(
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict[str, Any]:
+        params = clamp_params(limit, offset, max_limit=settings.max_list_items)
+        return await fetch_list(client, "/pending-devices", params=params)
+
     server.add_tool(
         wrap_tool("list_devices", settings.max_tool_response_bytes, list_devices),
         name="list_devices",
         title="List Devices",
         description=DESCRIPTION,
+        annotations=ToolAnnotations(read_only_hint=True),
+    )
+    server.add_tool(
+        wrap_tool("get_device", settings.max_tool_response_bytes, get_device),
+        name="get_device",
+        title="Get Device",
+        description=GET_DEVICE_DESCRIPTION,
+        annotations=ToolAnnotations(read_only_hint=True),
+    )
+    server.add_tool(
+        wrap_tool(
+            "get_device_statistics",
+            settings.max_tool_response_bytes,
+            get_device_statistics,
+        ),
+        name="get_device_statistics",
+        title="Get Device Statistics",
+        description=GET_DEVICE_STATISTICS_DESCRIPTION,
+        annotations=ToolAnnotations(read_only_hint=True),
+    )
+    server.add_tool(
+        wrap_tool(
+            "list_pending_devices",
+            settings.max_tool_response_bytes,
+            list_pending_devices,
+        ),
+        name="list_pending_devices",
+        title="List Pending Devices",
+        description=LIST_PENDING_DEVICES_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from unifi_mcp.tools.acl import register_acl_tools
 from unifi_mcp.tools.clients import register_client_tools
 from unifi_mcp.tools.devices import register_device_tools
+from unifi_mcp.tools.dns import register_dns_tools
 from unifi_mcp.tools.firewall import register_firewall_tools
 from unifi_mcp.tools.networks import register_network_tools
 from unifi_mcp.tools.reference import register_reference_tools
@@ -79,6 +80,7 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup(name="devices", gate=always_on, register=register_device_tools),
     ToolGroup(name="clients", gate=always_on, register=register_client_tools),
     ToolGroup(name="networks", gate=always_on, register=register_network_tools),
+    ToolGroup(name="dns", gate=always_on, register=register_dns_tools),
     ToolGroup(name="wifi", gate=always_on, register=register_wifi_tools),
     ToolGroup(name="firewall", gate=always_on, register=register_firewall_tools),
     ToolGroup(name="acl", gate=always_on, register=register_acl_tools),

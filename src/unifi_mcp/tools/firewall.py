@@ -20,8 +20,8 @@ Live-verified policy quirks (2026-09-21):
   be fetched via the detail endpoint;
 - filterable (live): ``name.like``, ``metadata.origin.eq`` and the nested
   ``source.zoneId.eq`` / ``destination.zoneId.eq`` (UUID **unquoted**);
-  ``action`` and ``enabled`` are NOT filterable despite the OpenAPI 10.4.57
-  table;
+   ``action`` and ``enabled`` are NOT filterable despite the OpenAPI
+   filter table;
 - the ordering endpoint requires a zone pair
   (``sourceFirewallZoneId`` + ``destinationFirewallZoneId``).
 """

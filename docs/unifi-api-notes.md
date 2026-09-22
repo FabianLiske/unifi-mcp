@@ -1,8 +1,8 @@
 # UniFi Network API — Live Discovery Notes
 
 Live verifiziert gegen das lokale Cloud Gateway (**UCG Ultra**, Network **10.6.101**).
-Referenz-OpenAPI: **v10.4.57** (neueste veröffentlichte Version) unter
-`docs/reference/network-openapi-10.4.57.json` (44 Pfade).
+Referenz-OpenAPI: **v10.6.106** (live vom Gateway gezogen, 2026-09-22) unter
+`docs/reference/network-openapi-10.6.106.json` (44 Pfade).
 
 Alle Befunde unten wurden in WP-2 mit read-only `GET`-Requests verifiziert.
 Was nicht als *verified* markiert ist, muss vor Implementierung erneut geprüft werden.
@@ -100,6 +100,9 @@ Top-level (nicht site-scoped): `/info`, `/sites`, `/pending-devices`,
 | get_wlan_settings | `/sites/{site}/wifi/broadcasts/{id}` | ⚠️ enthält Klartext-PSK |
 | list_acl_rules | `/sites/{site}/acl-rules` | ⚠️ `acl/rules` → 404, korrekt ist `acl-rules` (WP-4, live: 8 Regeln) |
 | get_acl_rule | `/sites/{site}/acl-rules/{id}` | `sourceFilter/destinationFilter.{type,networkIds[]}`; **Action-Enum `ALLOW`/`BLOCK` (kein `DENY`!)**, nested-Filter `sourceFilter.type.eq(...)` + `enabled.eq(true/false)` ok (WP-10) |
+| get_acl_rule_ordering | `/sites/{site}/acl-rules/ordering` | 200, **keine Query-Parameter**; `{orderedAclRuleIds[]}`; Listenposition == `index` der Regeln (WP-13b) |
+| list_dns_policies | `/sites/{site}/dns/policies` | 6 Policies (alle `A_RECORD`); Filter siehe §5f (WP-13b) |
+| get_dns_policy | `/sites/{site}/dns/policies/{id}` | 200; typspezifische Felder (§5f) |
 | list_traffic_matching_lists | `/sites/{site}/traffic-matching-lists` | 17; `{type: "IPV4_ADDRESSES"\|"PORTS", id, name, items[{type,value}]}` |
 | list_firewall_policies | `/sites/{site}/firewall/policies` | 200 (seit 2026-09-21 ZBF konfiguriert); ~350 Policies; `id` **fehlt bei abgeleiteten System-Policies**; Filter siehe §5e |
 | get_firewall_policy | `/sites/{site}/firewall/policies/{id}` | 200; Detail zusätzlich `description` |
@@ -250,6 +253,49 @@ Seit 2026-09-21 ist auf diesem Gateway die Zone-Based-Firewall konfiguriert
   (`trafficMatchingListId`); Port-Filter: `PORTS` (Werte/Range) oder
   `TRAFFIC_MATCHING_LIST`.
 
+## 5f. Devices-Detail/Statistics, DNS-Policies, ACL-Ordering, Pending-Devices (WP-13b, live 2026-09-22, 10.6.106)
+
+- **Device-Detail** `GET /sites/{site}/devices/{id}`: 200. List-Item-Felder
+  plus `configurationId`, `adoptedAt`, `provisionedAt`, `uplink{deviceId}`,
+  `features` als **Objekt** (z. B. `{"switching": {"lags": []}}`, im
+  Gegensatz zum List-Item dort Array), `interfaces` (z. B. `radios[]` mit
+  `channel/channelWidthMHz/frequencyGHz/wlanStandard`, bei Switches
+  `ports[]`) und `metadata{origin}`. 404 → `not-found`.
+- **Device-Statistics** `GET /sites/{site}/devices/{id}/statistics/latest`:
+  200, **kein Pagination-Envelope** (Plattdict). Felder:
+  `uptimeSec`, `lastHeartbeatAt`, `nextHeartbeatAt`,
+  `loadAverage1Min/5Min/15Min`, `cpuUtilizationPct`,
+  `memoryUtilizationPct`, `uplink{txRateBps,rxRateBps}`, `interfaces`
+  (pro Interface/Radio Raten). Kein Filter, keine Query-Parameter.
+- **Pending-Devices** `GET /pending-devices`: **Top-Level, ohne `siteId`**
+  (site-scoped Pfad gibt 404). 200, Pagination-Envelope. Item:
+  `macAddress, ipAddress, model, state` (`PENDING_ADOPTION`), `supported`,
+  `firmwareVersion`, `firmwareUpdatable`, `features[]`,
+  `adoptionTargetSiteIds[]`.
+- **DNS-Policies** `GET /sites/{site}/dns/policies`: 200 (6 Policies, hier
+  alle `A_RECORD`). Item ist ein Diskriminierungs-Union über `type`:
+  `A_RECORD`/`AAAA_RECORD`/`CNAME_RECORD`/`MX_RECORD`/`TXT_RECORD`/
+  `SRV_RECORD`/`FORWARD_DOMAIN`. Gemeinsame Felder: `type, id, enabled,
+  domain, metadata{origin}`; typspezifisch u. a. A: `ipv4Address,
+  ttlSeconds`, CNAME: `targetDomain, ttlSeconds`, FORWARD_DOMAIN:
+  `ipAddress` (Forwarder). Detail `GET …/dns/policies/{id}`: 200, gleiche
+  Felder.
+  - **Serverseitig filterbar (live verifiziert):** `type.eq('A_RECORD')`,
+    `domain.like('*…*')`, `enabled.eq(true|false)` (auch kombiniert mit
+    `and(…)`).
+  - **Nicht filterbar** (400 `api.request.invalid-filter`):
+    `metadata.origin` — im Gegensatz zu anderen Ressourcen.
+- **ACL-Ordering** `GET /sites/{site}/acl-rules/ordering`: 200, **keine
+  Query-Parameter** (im Gegensatz zum Zonenpaar-Ordering der
+  Firewall-Policies). `{orderedAclRuleIds[]}`; die Listenposition entspricht
+  dem `index` der Regeln (niedriger = zuerst).
+- **Netzwerk-Referenzen** `GET /sites/{site}/networks/{id}/references`:
+  500 `api.unexpected-error` (Gateway-Bug, auch in 10.6.106) → **nicht**
+  implementiert (siehe §5 `get_network_client`).
+- **Optional, nicht implementiert (200, hier 0 Einträge):**
+  `GET /sites/{site}/hotspot/vouchers`, `GET /sites/{site}/switching/…`
+  (Stacks, Ports, VLANs).
+
 ## 6. Zone-Based-Firewall nicht konfiguriert (⚠️, Historie)
 
 Bis 2026-09-21 war auf diesem Gateway die ZBF **nicht** konfiguriert:
@@ -275,16 +321,32 @@ kein Auth-/Parameterfehler. Seit 2026-09-21 ist die ZBF hier konfiguriert
 Niemals darauf vertrauen, dass die API Secrets versteckt — die client-seitige
 Redaction ist die einzige Garantie.
 
-## 8. Versionsdrift (⚠️)
+## 8. Versionsdrift (gelöst, 2026-09-22)
 
-- Installierte Gateway-Firmware: **Network 10.6.101**.
-- Neueste **veröffentlichte** OpenAPI-Referenz: **v10.4.57** (einzige öffentliche Version).
-- Das Gateway serviert **keine eigene** OpenAPI-Doku.
+- Installierte Gateway-Firmware: **Network 10.6.106**.
+- Das Gateway serviert **seine eigene** OpenAPI-Doku (authenticated):
+  `GET /proxy/network/api-docs/integration.json` (Header `X-API-Key`, kein
+  eigener Base-Path — liegt neben `/proxy/network/integration/v1`).
+- Referenz im Repo: `docs/reference/network-openapi-10.6.106.json` (live
+  gezogen). Ältere Pfade: `developer.ui.com/network/<version>` bzw.
+  `apidoc-cdn.ui.com/network/<version>/integration.json`.
+- **Diff 10.4.57 → 10.6.106:** keine neuen/entfallenen Pfade oder Methoden
+  (44 Pfade identisch); einziges Schema-Delta:
+  `IntegrationSwitchStackMemberDto` → `IntegrationSwitchStackLagMemberDto`
+  + `IntegrationSwitchStackUnitDto` (Switch-Stack-Member-Umbenennung).
 
-→ Der Client wird gegen die v10.4.57-Referenz gebaut. Die von den MVP-Tools
-verwendeten Feldnamen wurden gegen 10.6.101 verifiziert und stimmten überein.
-Bei Feld-Drift: als `unsupported`/Degradation behandeln statt hart zu failen;
-die Referenzdatei in `docs/reference/` für Diffs behalten.
+→ Der Client wird gegen die 10.6.106-Referenz entwickelt. Bei Feld-Drift:
+als `unsupported`/Degradation behandeln statt hart zu failen; die
+Referenzdatei in `docs/reference/` für Diffs behalten.
+
+Referenz aktualisieren (nach Gateway-Update):
+
+```bash
+source .env
+curl -sk -H "X-API-Key: $UNIFI_API_KEY" \
+  "https://${UNIFI_BASE_URL#https://}/proxy/network/api-docs/integration.json" \
+  -o docs/reference/network-openapi-<version>.json
+```
 
 ## 9. Auth / Read-only-Garantie (⚠️)
 

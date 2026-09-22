@@ -45,16 +45,22 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
 
         tools = await session.list_tools()
         names = [tool.name for tool in tools.tools]
-        # WP-7–10 (+ WP-13 firewall policies): exactly the read-only toolset.
+        # WP-7–10, WP-13 firewall policies + WP-13b: exactly the read-only
+        # toolset.
         assert set(names) == {
             "get_system_info",
             "list_sites",
             "list_devices",
+            "get_device",
+            "get_device_statistics",
+            "list_pending_devices",
             "list_clients",
             "get_client",
             "inspect_client_path",
             "list_networks",
             "get_network",
+            "list_dns_policies",
+            "get_dns_policy",
             "list_wifi",
             "get_wifi",
             "list_firewall_zones",
@@ -64,11 +70,12 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
             "get_firewall_policy_ordering",
             "list_acl_rules",
             "get_acl_rule",
+            "get_acl_rule_ordering",
             "list_traffic_matching_lists",
             "get_traffic_matching_list",
             "list_reference_resources",
         }
-        assert len(names) == 20
+        assert len(names) == 26
         # Read-only MVP: no write/action/delete tool may be listed.
         forbidden = ("write", "update", "create", "delete", "restart", "cycle", "reconnect")
         assert not any(word in name for name in names for word in forbidden)

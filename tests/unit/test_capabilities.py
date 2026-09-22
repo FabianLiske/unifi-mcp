@@ -14,6 +14,7 @@ SITE_SCOPED = (
     "/devices",
     "/clients",
     "/networks",
+    "/dns/policies",
     "/wifi/broadcasts",
     "/firewall/zones",
     "/acl-rules",
@@ -30,7 +31,12 @@ def _mock_env(
     site_id: str,
     overrides: dict[str, httpx.Response] | None = None,
 ) -> None:
-    """Mock /info + /sites + all site-scoped probes (with optional overrides)."""
+    """Mock /info + /sites + all probe routes (with optional overrides).
+
+    The top-level ``/pending-devices`` probe is mocked alongside the
+    site-scoped ones; pass a ``/pending-devices`` key in *overrides* to
+    serve a different response.
+    """
     overrides = overrides or {}
     respx_mock.get(f"{BASE}/info").mock(
         return_value=httpx.Response(200, json={"applicationVersion": "10.6.101"})
@@ -53,6 +59,9 @@ def _mock_env(
             respx_mock.get(f"{BASE}{full}").mock(return_value=overrides[full])
         else:
             respx_mock.get(f"{BASE}{full}").mock(return_value=httpx.Response(200, json=_page()))
+    respx_mock.get(f"{BASE}/pending-devices").mock(
+        return_value=overrides.get("/pending-devices", httpx.Response(200, json=_page()))
+    )
 
 
 async def test_all_categories_ok(respx_mock, make_client, make_settings) -> None:
@@ -65,10 +74,12 @@ async def test_all_categories_ok(respx_mock, make_client, make_settings) -> None
         "devices",
         "clients",
         "networks",
+        "dns_policies",
         "wifi",
         "firewall",
         "acl",
         "traffic_matching_lists",
+        "pending_devices",
     ):
         assert caps.is_available(name), name
     as_dict = caps.to_dict()
@@ -146,11 +157,17 @@ async def test_sites_failure_cascades_without_site_id(
     respx_mock.get(f"{BASE}/sites").mock(
         return_value=httpx.Response(500, json={"code": "api.internal", "message": "boom"})
     )
+    # The top-level probe is independent of the site but hits the same
+    # broken gateway.
+    respx_mock.get(f"{BASE}/pending-devices").mock(
+        return_value=httpx.Response(500, json={"code": "api.internal", "message": "boom"})
+    )
     client = await make_client(make_settings(unifi_max_retries=0))  # no site id known
     caps = await detect_capabilities(client)
     assert caps.categories["sites"].status == "unavailable"
     assert caps.categories["devices"].status == "unavailable"
     assert caps.categories["acl"].status == "unavailable"
+    assert caps.categories["pending_devices"].status == "unavailable"
 
 
 async def test_core_failure_raises(respx_mock, make_client, make_settings) -> None:

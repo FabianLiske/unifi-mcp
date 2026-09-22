@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from mcp.server.mcpserver import MCPServer
 
@@ -87,14 +88,167 @@ def test_clamp_params_negative_offset_rejected() -> None:
 # --- registration ----------------------------------------------------------------
 
 
-async def test_register_device_tools_registers_list_devices(make_settings) -> None:
+async def test_register_device_tools(make_settings) -> None:
     settings = make_settings()
     server = MCPServer(name="t")
     register_device_tools(server, object(), settings)  # type: ignore[arg-type]
     tools = await server.list_tools()
     names = [tool.name for tool in tools]
-    assert names == ["list_devices"]
-    tool = tools[0]
-    assert tool.annotations is not None and tool.annotations.read_only_hint is True
-    params = tool.input_schema["properties"]
-    assert set(params) == {"site_id", "device_type", "state", "search", "limit", "offset"}
+    assert names == [
+        "list_devices",
+        "get_device",
+        "get_device_statistics",
+        "list_pending_devices",
+    ]
+    for tool in tools:
+        assert tool.annotations is not None and tool.annotations.read_only_hint is True
+    params = {tool.name: set(tool.input_schema["properties"]) for tool in tools}
+    assert params["list_devices"] == {
+        "site_id",
+        "device_type",
+        "state",
+        "search",
+        "limit",
+        "offset",
+    }
+    assert params["get_device"] == {"device_id", "site_id"}
+    assert params["get_device_statistics"] == {"device_id", "site_id"}
+    # pending-devices is top-level: no site_id parameter
+    assert params["list_pending_devices"] == {"limit", "offset"}
+
+
+# --- tool behavior (real client, respx-mocked API) ------------------------------
+
+
+async def test_get_device_returns_normalized_detail(
+    make_settings, make_client, respx_mock, load_fixture
+) -> None:
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/devices/dev-ap-1").mock(
+        return_value=httpx.Response(200, json=load_fixture("device_detail.json"))
+    )
+    server = MCPServer(name="t")
+    register_device_tools(server, client, settings)
+    result = await server.call_tool("get_device", {"device_id": "dev-ap-1", "site_id": "site-x"})
+    payload = result.structured_content
+    assert payload["id"] == "dev-ap-1"
+    assert payload["name"] == "UAP AC Lite EG"
+    assert payload["features"] == {"accessPoint": {}}
+    assert len(payload["interfaces"]["radios"]) == 2
+    # detail level: internal fields (metadata) are stripped
+    assert "metadata" not in payload
+
+
+async def test_get_device_unknown_returns_not_found(make_settings, make_client, respx_mock) -> None:
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/devices/dev-missing").mock(
+        return_value=httpx.Response(404, json={"code": "not-found", "message": "nope"})
+    )
+    server = MCPServer(name="t")
+    register_device_tools(server, client, settings)
+    result = await server.call_tool("get_device", {"device_id": "dev-missing", "site_id": "site-x"})
+    payload = result.structured_content
+    assert payload["error"] == "not_found"
+    assert payload["resource"] == "device"
+    assert payload["query"] == "dev-missing"
+
+
+async def test_get_device_statistics(make_settings, make_client, respx_mock) -> None:
+    stats = {
+        "uptimeSec": 1124321,
+        "lastHeartbeatAt": "2026-09-22T01:34:43Z",
+        "nextHeartbeatAt": "2026-09-22T01:35:29Z",
+        "loadAverage1Min": 0.57,
+        "loadAverage5Min": 0.74,
+        "loadAverage15Min": 0.77,
+        "cpuUtilizationPct": 11.6,
+        "memoryUtilizationPct": 13.2,
+        "uplink": {"txRateBps": 48, "rxRateBps": 24},
+        "interfaces": {},
+    }
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/devices/dev-sw-1/statistics/latest").mock(
+        return_value=httpx.Response(200, json=stats)
+    )
+    server = MCPServer(name="t")
+    register_device_tools(server, client, settings)
+    result = await server.call_tool(
+        "get_device_statistics", {"device_id": "dev-sw-1", "site_id": "site-x"}
+    )
+    payload = result.structured_content
+    assert payload["uptimeSec"] == 1124321
+    assert payload["cpuUtilizationPct"] == 11.6
+    assert payload["uplink"] == {"txRateBps": 48, "rxRateBps": 24}
+
+
+async def test_get_device_statistics_unknown_returns_not_found(
+    make_settings, make_client, respx_mock
+) -> None:
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/devices/dev-missing/statistics/latest").mock(
+        return_value=httpx.Response(404, json={"code": "not-found", "message": "nope"})
+    )
+    server = MCPServer(name="t")
+    register_device_tools(server, client, settings)
+    result = await server.call_tool(
+        "get_device_statistics", {"device_id": "dev-missing", "site_id": "site-x"}
+    )
+    payload = result.structured_content
+    assert payload["error"] == "not_found"
+    assert payload["resource"] == "device"
+
+
+async def test_list_pending_devices_is_top_level(make_settings, make_client, respx_mock) -> None:
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    requests: list[httpx.Request] = []
+
+    def _pending(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "offset": 0,
+                "limit": 50,
+                "count": 1,
+                "totalCount": 1,
+                "data": [
+                    {
+                        "macAddress": "94:2a:6f:26:c6:ca",
+                        "ipAddress": "172.26.1.99",
+                        "model": "USW-Pro-8-PoE",
+                        "state": "PENDING_ADOPTION",
+                        "supported": True,
+                        "firmwareVersion": "7.5.15",
+                        "firmwareUpdatable": False,
+                        "features": ["switching"],
+                        "adoptionTargetSiteIds": ["site-x"],
+                    }
+                ],
+            },
+        )
+
+    respx_mock.get(f"{base}/pending-devices").mock(side_effect=_pending)
+    server = MCPServer(name="t")
+    register_device_tools(server, client, settings)
+    result = await server.call_tool("list_pending_devices", {"limit": 10000, "offset": 2})
+    payload = result.structured_content
+    assert payload["count"] == 1
+    assert payload["total_count"] == 1
+    item = payload["items"][0]
+    assert item["macAddress"] == "94:2a:6f:26:c6:ca"
+    assert item["state"] == "PENDING_ADOPTION"
+    # top-level endpoint: no /sites/{site} path segment
+    assert requests[-1].url.path == "/proxy/network/integration/v1/pending-devices"
+    params = dict(requests[-1].url.params)
+    assert params["limit"] == "200"
+    assert params["offset"] == "2"

@@ -1,0 +1,34 @@
+{
+  "offset": 0,
+  "limit": 50,
+  "count": 3,
+  "totalCount": 3,
+  "data": [
+    {
+      "type": "A_RECORD",
+      "id": "dns-a-k8s",
+      "enabled": true,
+      "metadata": { "origin": "USER_DEFINED" },
+      "domain": "k8s.local",
+      "ipv4Address": "172.26.40.1",
+      "ttlSeconds": 300
+    },
+    {
+      "type": "A_RECORD",
+      "id": "dns-a-nas",
+      "enabled": false,
+      "metadata": { "origin": "USER_DEFINED" },
+      "domain": "nas.local",
+      "ipv4Address": "172.26.30.5",
+      "ttlSeconds": 600
+    },
+    {
+      "type": "FORWARD_DOMAIN",
+      "id": "dns-fwd-example",
+      "enabled": true,
+      "metadata": { "origin": "USER_DEFINED" },
+      "domain": "example.com",
+      "ipAddress": "1.1.1.1"
+    }
+  ]
+}

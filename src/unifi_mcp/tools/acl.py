@@ -47,6 +47,13 @@ subnets, port ranges). Pass site_id to look in another site. Unknown ids
 return a not_found error. This tool is read-only.
 """
 
+DESCRIPTION_ORDERING = """\
+Returns the user-defined ACL rules in evaluation order: the list position
+is the order in which the gateway evaluates them (it matches the 'index'
+field of the rules, lower = earlier). Use the returned ids with
+get_acl_rule to inspect individual rules. This tool is read-only.
+"""
+
 #: user-friendly ``action`` value -> UniFi action enum (UPPERCASE, live-verified).
 _ACTION_API: dict[str, str] = {"allow": "ALLOW", "deny": "BLOCK", "block": "BLOCK"}
 
@@ -166,6 +173,12 @@ def register_acl_tools(server: MCPServer, client: UniFiClient, settings: Setting
         site = await resolve_site(client, settings, site_id)
         return await _get_acl_rule_detail(client, f"/sites/{site}/acl-rules/{rule_id}", rule_id)
 
+    async def get_acl_rule_ordering(site_id: str | None = None) -> dict[str, Any]:
+        site = await resolve_site(client, settings, site_id)
+        data = await client.get(f"/sites/{site}/acl-rules/ordering")
+        ordered = cast("dict[str, Any]", data).get("orderedAclRuleIds") or []
+        return {"ordered_rule_ids": [rule_id for rule_id in ordered if isinstance(rule_id, str)]}
+
     server.add_tool(
         wrap_tool("list_acl_rules", settings.max_tool_response_bytes, list_acl_rules),
         name="list_acl_rules",
@@ -178,5 +191,12 @@ def register_acl_tools(server: MCPServer, client: UniFiClient, settings: Setting
         name="get_acl_rule",
         title="Get ACL Rule",
         description=DESCRIPTION_GET,
+        annotations=ToolAnnotations(read_only_hint=True),
+    )
+    server.add_tool(
+        wrap_tool("get_acl_rule_ordering", settings.max_tool_response_bytes, get_acl_rule_ordering),
+        name="get_acl_rule_ordering",
+        title="Get ACL Rule Ordering",
+        description=DESCRIPTION_ORDERING,
         annotations=ToolAnnotations(read_only_hint=True),
     )

@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-21 (WP-0 … WP-13 done)
+Stand: 2026-09-22 (WP-0 … WP-13b done)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -41,6 +41,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-11 | Dockerfile + GH-Actions (ghcr)         | 3        | done        | WP-6      |
 | WP-12 | Tests, Smoke, README, DoD              | 3        | done        | WP-7–11   |
 | WP-13 | ZBF Policies (Read)                    | 3        | done        | WP-12     |
+| WP-13b| Read-Tools: Device-Detail, DNS, ACL-Ordering, Pending | 3 | done | WP-13 |
 | WP-14 | Safe-Writes-Fundament                  | post-MVP | open        | WP-13     |
 | WP-15 | Erste Write-Tools                      | post-MVP | open        | WP-14     |
 | WP-16 | Restliche Write-Tools                  | post-MVP | open        | WP-15     |
@@ -307,6 +308,28 @@ Abnahme: Live-Discovery der Policies-Endpunkte (Shape, Filter, Quirks) dokumenti
 
 Status: `done`
 
+### WP-13b — Read-Tools: Device-Detail/-Statistics, DNS-Policies, ACL-Ordering, Pending-Devices
+
+Gap-Analyse aller 41 GET-Endpunkte der OpenAPI-Doku gegen die implementierten Tools (Stand WP-13: 27 via 20 Tools). Live-Spec 10.6.106 vom Gateway gezogen und als Referenz ins Repo geholt (`docs/reference/network-openapi-10.6.106.json`, pfadidentisch zu 10.4.57). Sechs fehlende Read-Tools live discovery + implementiert.
+
+Abnahme: Live-Discovery (Shape, Filter, Quirks) dokumentiert; Unit-/E2E-Tests (inkl. Contract 20 → 26 Tools); Capability-Probes um `dns_policies` + `pending_devices` erweitert; ruff + mypy + pytest grün; Live-Smoke gegen das UCG.
+
+- [x] **Live-Discovery (WP-13b, 10.6.106):** Device-Detail (`+ configurationId`, `adoptedAt`, `provisionedAt`, `interfaces{radios[]|ports[]}`), Device-Statistics (Plattdict, `uptimeSec`, `loadAverage*`, `cpuUtilizationPct`, `memoryUtilizationPct`, `uplink{tx/rxRateBps}`), DNS-Policies (6× `A_RECORD`; Union über `type`, typspezifische Felder `ipv4Address`/`targetDomain`/`ipAddress`), ACL-Ordering (`{orderedAclRuleIds[]}`, **keine** Query-Parameter, Listenposition == `index`), Pending-Devices (**Top-Level ohne siteId**) — Details in `docs/unifi-api-notes.md` §5f
+- [x] **DNS-Filter (live verifiziert):** `type.eq`, `domain.like`, `enabled.eq` (+ kombiniert) gateway-seitig ok; **`metadata.origin` nicht filterbar** (400 `api.request.invalid-filter`)
+- [x] `tools/devices.py`: `get_device` (Detail, 404 → `not_found`), `get_device_statistics`, `list_pending_devices` (Top-Level, kein `site_id`)
+- [x] `tools/dns.py` (neu): `list_dns_policies` (Filter `record_type` [Allowliste inkl. Aliase `a`/`forward`], `domain`, `enabled`), `get_dns_policy` (Detail, 404 → `not_found`)
+- [x] `tools/acl.py`: `get_acl_rule_ordering` (`orderedAclRuleIds` → `ordered_rule_ids`)
+- [x] Capability-Probes: `dns_policies` (site-scoped) + `pending_devices` (top-level) — `get_system_info` meldet beide Kategorien
+- [x] Fixtures: `dns_policies.json` (2× `A_RECORD`, 1× `FORWARD_DOMAIN`)
+- [x] Unit-Tests: Device-Registration (4 Tools) + Behavior (Detail, Statistics, Pending), DNS-Filter-Matrix + Aliase + 404 + Registration, ACL-Ordering
+- [x] E2E: `test_dns_e2e.py` (neu, 6 Tests), `test_tools_e2e.py` +5 Tests (get_device, get_device 404, statistics, pending-devices, acl-ordering), Capability-Assertions in `get_system_info`
+- [x] Contract-Test: exakt 26 Tools (20 + 6 WP-13b) + read-only-hints
+- [x] Doku: api-notes §5/§5f, README (Devices +3, DNS neu, ACL +1), OpenAPI-10.6.106-Referenz
+- [x] Lokal: ruff + mypy strict + pytest (362 Tests) grün
+- [x] Live-Smoke gegen UCG (10.6.106): alle 6 neuen Tools erfolgreich (Device-Detail + Statistics am USW Pro 8 PoE, 6 DNS-Policies inkl. `type.eq`-Filter, ACL-Ordering mit 4 Regeln, Pending-Devices leer, Capability-Checks `dns_policies=ok` + `pending_devices=ok`)
+
+Status: `done`
+
 ## Post-MVP (Phasen 2–5 laut Design-Doc)
 
 ### WP-14 — Safe-Writes-Fundament
@@ -359,7 +382,7 @@ Status: `open`
 - [x] Streamable HTTP `/mcp` funktioniert, stateless (`stateless_http=True` + Contract-Tests)
 - [x] MCP-Upstream-Auth (Bearer) funktioniert (Middleware + Tests 401/403)
 - [x] non-root Container-Image (Dockerfile `USER unifi`, uid 10001)
-- [x] Read-only Toolset verfügbar (17 MVP-Tools; + 3 ZBF-Policy-Tools in WP-13 = 20, Registry + Contract-Tests)
+- [x] Read-only Toolset verfügbar (17 MVP-Tools; + 3 ZBF-Policy-Tools in WP-13; + 6 Read-Tools in WP-13b = 26, Registry + Contract-Tests)
 - [x] Write-/Action-/Delete-Tools sind nicht registriert (nur Read-Gruppen, Gating-Tests)
 - [x] Secrets werden redigiert (`redaction.py` + Unit/E2E, PSK live verifiziert)
 - [x] Pagination und Response-Limits existieren (`normalization.py` + Tests)

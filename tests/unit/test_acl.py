@@ -104,7 +104,7 @@ async def test_register_acl_tools(make_settings) -> None:
     register_acl_tools(server, object(), settings)  # type: ignore[arg-type]
     tools = await server.list_tools()
     names = [tool.name for tool in tools]
-    assert names == ["list_acl_rules", "get_acl_rule"]
+    assert names == ["list_acl_rules", "get_acl_rule", "get_acl_rule_ordering"]
     for tool in tools:
         assert tool.annotations is not None and tool.annotations.read_only_hint is True
     params = {tool.name: set(tool.input_schema["properties"]) for tool in tools}
@@ -118,6 +118,7 @@ async def test_register_acl_tools(make_settings) -> None:
         "offset",
     }
     assert params["get_acl_rule"] == {"rule_id", "site_id"}
+    assert params["get_acl_rule_ordering"] == {"site_id"}
     assert "rule_id" in tools[1].input_schema.get("required", [])
 
 
@@ -216,3 +217,28 @@ async def test_list_acl_rules_sends_clamped_params(make_settings, make_client, r
     assert params["filter"] == "and(enabled.eq(true),action.eq('ALLOW'))"
     assert params["limit"] == "200"
     assert params["offset"] == "3"
+
+
+async def test_get_acl_rule_ordering_returns_snake_case_ids(
+    make_settings, make_client, respx_mock
+) -> None:
+    settings = make_settings()
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/acl-rules/ordering").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderedAclRuleIds": [
+                    "rule-1",
+                    "rule-2",
+                    "rule-3",
+                ]
+            },
+        )
+    )
+    server = MCPServer(name="t")
+    register_acl_tools(server, client, settings)
+    result = await server.call_tool("get_acl_rule_ordering", {"site_id": "site-x"})
+    payload = result.structured_content
+    assert payload == {"ordered_rule_ids": ["rule-1", "rule-2", "rule-3"]}

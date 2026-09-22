@@ -197,6 +197,7 @@ def fake_unifi(respx_mock, load_fixture) -> FakeUniFi:
     for resource in (
         "clients",
         "networks",
+        "dns/policies",
         "wifi/broadcasts",
         "acl-rules",
         "traffic-matching-lists",
@@ -204,6 +205,9 @@ def fake_unifi(respx_mock, load_fixture) -> FakeUniFi:
         respx_mock.get(f"{base}/sites/{fake.site_id}/{resource}").mock(
             return_value=httpx.Response(200, json=EMPTY_PAGE)
         )
+    respx_mock.get(f"{base}/pending-devices").mock(
+        return_value=httpx.Response(200, json=EMPTY_PAGE)
+    )
     for resource in ("firewall/zones", "firewall/policies"):
         respx_mock.get(f"{base}/sites/{fake.site_id}/{resource}").mock(
             return_value=httpx.Response(

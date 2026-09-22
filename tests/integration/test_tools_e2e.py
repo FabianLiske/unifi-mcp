@@ -16,11 +16,16 @@ EXPECTED_TOOLS = {
     "get_system_info",
     "list_sites",
     "list_devices",
+    "get_device",
+    "get_device_statistics",
+    "list_pending_devices",
     "list_clients",
     "get_client",
     "inspect_client_path",
     "list_networks",
     "get_network",
+    "list_dns_policies",
+    "get_dns_policy",
     "list_wifi",
     "get_wifi",
     "list_firewall_zones",
@@ -30,6 +35,7 @@ EXPECTED_TOOLS = {
     "get_firewall_policy_ordering",
     "list_acl_rules",
     "get_acl_rule",
+    "get_acl_rule_ordering",
     "list_traffic_matching_lists",
     "get_traffic_matching_list",
     "list_reference_resources",
@@ -55,6 +61,8 @@ async def test_get_system_info(mcp_session, fake_unifi) -> None:
     assert caps["sites"]["status"] == "ok"
     assert caps["devices"]["status"] == "ok"
     assert caps["clients"]["status"] == "ok"
+    assert caps["dns_policies"]["status"] == "ok"
+    assert caps["pending_devices"]["status"] == "ok"
     assert caps["firewall"]["status"] == "not_configured"
 
 
@@ -169,6 +177,132 @@ async def test_list_devices_gateway_unavailable_returns_unavailable(
         result = await session.call_tool("list_devices", {"site_id": "flaky"})
     payload = result.structured_content
     assert payload["error"] == "unavailable"
+
+
+async def test_get_device(mcp_session, fake_unifi, respx_mock, load_fixture) -> None:
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/{fake_unifi.site_id}/devices/dev-ap-1").mock(
+        return_value=httpx.Response(200, json=load_fixture("device_detail.json"))
+    )
+    async with mcp_session() as session:
+        result = await session.call_tool("get_device", {"device_id": "dev-ap-1"})
+    assert result.is_error is not True
+    payload = result.structured_content
+    assert payload["id"] == "dev-ap-1"
+    assert payload["name"] == "UAP AC Lite EG"
+    assert payload["firmwareVersion"] == "5.1.33"
+    assert payload["interfaces"]["radios"][0]["channel"] == 11
+    # detail normalization strips internal fields
+    assert "metadata" not in payload
+
+
+async def test_get_device_unknown_returns_not_found(mcp_session, fake_unifi, respx_mock) -> None:
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/{fake_unifi.site_id}/devices/dev-missing").mock(
+        return_value=httpx.Response(404, json={"code": "not-found", "message": "Device not found."})
+    )
+    async with mcp_session() as session:
+        result = await session.call_tool("get_device", {"device_id": "dev-missing"})
+    payload = result.structured_content
+    assert payload["error"] == "not_found"
+    assert payload["resource"] == "device"
+    assert payload["query"] == "dev-missing"
+
+
+async def test_get_device_statistics(mcp_session, fake_unifi, respx_mock) -> None:
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(
+        f"{base}/sites/{fake_unifi.site_id}/devices/dev-switch-1/statistics/latest"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "uptimeSec": 1124321,
+                "lastHeartbeatAt": "2026-09-22T01:34:43Z",
+                "nextHeartbeatAt": "2026-09-22T01:35:29Z",
+                "loadAverage1Min": 0.57,
+                "loadAverage5Min": 0.74,
+                "loadAverage15Min": 0.77,
+                "cpuUtilizationPct": 11.6,
+                "memoryUtilizationPct": 13.2,
+                "uplink": {"txRateBps": 48, "rxRateBps": 24},
+                "interfaces": {},
+            },
+        )
+    )
+    async with mcp_session() as session:
+        result = await session.call_tool("get_device_statistics", {"device_id": "dev-switch-1"})
+    assert result.is_error is not True
+    payload = result.structured_content
+    assert payload["uptimeSec"] == 1124321
+    assert payload["loadAverage1Min"] == 0.57
+    assert payload["uplink"] == {"txRateBps": 48, "rxRateBps": 24}
+
+
+async def test_list_pending_devices(mcp_session, respx_mock) -> None:
+    base = "http://gateway.test/proxy/network/integration/v1"
+    requests: list[httpx.Request] = []
+
+    def _pending(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "offset": 0,
+                "limit": 50,
+                "count": 1,
+                "totalCount": 1,
+                "data": [
+                    {
+                        "macAddress": "94:2a:6f:26:c6:ca",
+                        "ipAddress": "172.26.1.99",
+                        "model": "USW-Pro-8-PoE",
+                        "state": "PENDING_ADOPTION",
+                        "supported": True,
+                        "firmwareVersion": "7.5.15",
+                        "firmwareUpdatable": False,
+                        "features": ["switching"],
+                        "adoptionTargetSiteIds": ["site-default"],
+                    }
+                ],
+            },
+        )
+
+    respx_mock.get(f"{base}/pending-devices").mock(side_effect=_pending)
+    async with mcp_session() as session:
+        result = await session.call_tool("list_pending_devices", {"limit": 2, "offset": 1})
+    assert result.is_error is not True
+    payload = result.structured_content
+    assert payload["count"] == 1
+    assert payload["total_count"] == 1
+    assert payload["items"][0]["macAddress"] == "94:2a:6f:26:c6:ca"
+    assert payload["items"][0]["state"] == "PENDING_ADOPTION"
+    # top-level endpoint: no /sites/{site} path segment, paging params pass through
+    assert requests[-1].url.path == "/proxy/network/integration/v1/pending-devices"
+    params = dict(requests[-1].url.params)
+    assert params["limit"] == "2"
+    assert params["offset"] == "1"
+
+
+async def test_get_acl_rule_ordering(mcp_session, fake_unifi, respx_mock) -> None:
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/{fake_unifi.site_id}/acl-rules/ordering").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "orderedAclRuleIds": [
+                    "acl-rule-allow",
+                    "acl-rule-ports",
+                    "acl-rule-block",
+                ]
+            },
+        )
+    )
+    async with mcp_session() as session:
+        result = await session.call_tool("get_acl_rule_ordering", {})
+    assert result.is_error is not True
+    payload = result.structured_content
+    assert payload == {"ordered_rule_ids": ["acl-rule-allow", "acl-rule-ports", "acl-rule-block"]}
 
 
 async def test_list_sites_response_too_large(

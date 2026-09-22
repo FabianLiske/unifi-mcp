@@ -38,11 +38,15 @@ _SITE_SCOPED_PROBES: tuple[tuple[str, str], ...] = (
     ("devices", "/sites/{site}/devices"),
     ("clients", "/sites/{site}/clients"),
     ("networks", "/sites/{site}/networks"),
+    ("dns_policies", "/sites/{site}/dns/policies"),
     ("wifi", "/sites/{site}/wifi/broadcasts"),
     ("firewall", "/sites/{site}/firewall/zones"),
     ("acl", "/sites/{site}/acl-rules"),
     ("traffic_matching_lists", "/sites/{site}/traffic-matching-lists"),
 )
+
+#: Top-level probe paths (not site-scoped; probed even without a site).
+_TOP_LEVEL_PROBES: tuple[tuple[str, str], ...] = (("pending_devices", "/pending-devices"),)
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,9 @@ async def detect_capabilities(client: UniFiClient) -> Capabilities:
             continue
         await _probe(client, categories, name, template.format(site=site_id))
 
+    for name, path in _TOP_LEVEL_PROBES:
+        await _probe(client, categories, name, path)
+
     for name, cap in sorted(categories.items()):
         if cap.status == "ok":
             logger.info("capability ok", category=name)
@@ -149,9 +156,9 @@ async def detect_capabilities(client: UniFiClient) -> Capabilities:
 class CapabilityCache:
     """TTL cache around :func:`detect_capabilities` for one client (design §29).
 
-    The probe costs up to nine gateway requests (``/info`` + ``/sites`` + one
-    per category), so tools and the readiness path must not run it on every
-    call. Within the TTL the cached result is returned; on expiry it is
+    The probe costs up to eleven gateway requests (``/info`` + ``/sites`` +
+    one per category), so tools and the readiness path must not run it on
+    every call. Within the TTL the cached result is returned; on expiry it is
     re-detected. A failed re-detection still raises — callers (tools) map
     that to a structured error, and the server is expected to be healthy
     when a core ``/info`` call succeeds.
