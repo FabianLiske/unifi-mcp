@@ -102,9 +102,7 @@ async def guarded_update(
     """
     # 1. read-before-write against fresh state (§14/§29).
     try:
-        raw = await verify_expected_state(
-            client, path, expected_state_hash, resource=resource
-        )
+        raw = await verify_expected_state(client, path, expected_state_hash, resource=resource)
     except StateMismatchError:
         _record(tool, site_id, object_id, object_name, {}, "state_changed")
         raise

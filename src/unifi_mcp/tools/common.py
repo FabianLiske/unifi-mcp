@@ -66,9 +66,7 @@ _ERROR_CODE_BY_TYPE: tuple[tuple[type[UniFiError], str], ...] = (
 )
 
 
-def wrap_tool(
-    name: str, max_response_bytes: int, fn: ToolFn, *, write: bool = False
-) -> ToolFn:
+def wrap_tool(name: str, max_response_bytes: int, fn: ToolFn, *, write: bool = False) -> ToolFn:
     """Wrap a tool implementation with metrics, size cap, and error mapping.
 
     ``functools.wraps`` keeps *fn*'s signature so the MCP SDK still derives

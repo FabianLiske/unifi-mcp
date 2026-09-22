@@ -283,9 +283,7 @@ class UniFiClient:
             started = time.monotonic()
             response: httpx.Response | None = None
             try:
-                request = self._http.build_request(
-                    method, path, params=params, json=json_body
-                )
+                request = self._http.build_request(method, path, params=params, json=json_body)
                 response = await self._http.send(request, stream=True)
                 body = await self._read_body_with_cap(response, settings.max_tool_response_bytes)
                 status = response.status_code

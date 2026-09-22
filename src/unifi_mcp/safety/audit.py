@@ -82,9 +82,7 @@ class AuditLog:
     def _emit(self, event: dict[str, Any]) -> None:
         if self._file is not None:
             try:
-                self._file.write(
-                    json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
-                )
+                self._file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
                 self._file.flush()
                 return
             except OSError as exc:

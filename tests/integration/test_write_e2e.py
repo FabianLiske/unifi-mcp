@@ -93,9 +93,7 @@ def register_test_write_tools(server: MCPServer, client: UniFiClient, settings: 
         )
 
     server.add_tool(
-        wrap_tool(
-            "update_widget", settings.max_tool_response_bytes, update_widget, write=True
-        ),
+        wrap_tool("update_widget", settings.max_tool_response_bytes, update_widget, write=True),
         name="update_widget",
         title="Update Widget",
         description="Test-only write tool (WP-14 foundation).",
@@ -111,9 +109,7 @@ WRITE_GROUP = ToolGroup(
 
 
 def _mock_widget(respx_mock, raw: dict[str, Any], updated: dict[str, Any]) -> httpx.MockRoute:
-    respx_mock.get(f"{BASE}{WIDGET_PATH}").mock(
-        return_value=httpx.Response(200, json=raw)
-    )
+    respx_mock.get(f"{BASE}{WIDGET_PATH}").mock(return_value=httpx.Response(200, json=raw))
     return respx_mock.put(f"{BASE}{WIDGET_PATH}").mock(
         return_value=httpx.Response(200, json=updated)
     )
@@ -138,9 +134,10 @@ async def test_write_tool_absent_when_flag_off(mcp_app_factory) -> None:
 
 async def test_write_tool_present_when_flag_on(mcp_app_factory) -> None:
     reset_audit_log()
-    async with mcp_app_factory(
-        groups=TOOL_GROUPS + (WRITE_GROUP,), enable_write_tools=True
-    ) as (app, settings):
+    async with mcp_app_factory(groups=TOOL_GROUPS + (WRITE_GROUP,), enable_write_tools=True) as (
+        app,
+        settings,
+    ):
         token = settings.mcp_auth_token.get_secret_value()
         names = await _list_tool_names(app, token)
         async with mcp_client_session(app, token) as session:

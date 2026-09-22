@@ -100,9 +100,7 @@ def test_state_mismatch_shape_and_key_order() -> None:
 
 
 def test_state_mismatch_custom_message() -> None:
-    err = StateMismatchError(
-        "acl_rule", current_state_hash="sha256:" + "0" * 64, message="changed"
-    )
+    err = StateMismatchError("acl_rule", current_state_hash="sha256:" + "0" * 64, message="changed")
     assert err.to_dict()["message"] == "changed"
 
 

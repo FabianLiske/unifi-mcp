@@ -57,9 +57,7 @@ def test_internal_fields_are_excluded() -> None:
     # not affect the hash.
     base = compute_state_hash(_widget())
     assert base == compute_state_hash(_widget(revision=99, etag="0x99"))
-    assert base == compute_state_hash(
-        _widget(metadata={"origin": "SYSTEM", "creationTime": 999})
-    )
+    assert base == compute_state_hash(_widget(metadata={"origin": "SYSTEM", "creationTime": 999}))
 
 
 def test_secret_value_change_does_not_change_hash() -> None:
