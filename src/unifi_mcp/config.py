@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     mcp_auth_token: SecretStr
     mcp_bind_host: str = "0.0.0.0"
     mcp_bind_port: int = Field(default=8000, ge=1, le=65535)
+    # Human-readable instance identity (e.g. "local-dev", "production")
+    # injected into the server title and instructions so clients can tell
+    # multiple instances of the same deployment apart.
+    mcp_instance_label: str = "production"
 
     # --- Logging ---
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
@@ -70,11 +74,18 @@ class Settings(BaseSettings):
     @field_validator("unifi_site_id")
     @classmethod
     def _empty_site_id_to_none(cls, value: str | None) -> str | None:
-        # `UNIFI_SITE_ID=` (empty) means "no explicit site", not an
+        # `UNIFI_SITE_ID=` (empty) means "no explicit site", not a
         # empty site id that would build broken site-scoped URLs.
         if value is not None and not value.strip():
             return None
         return value
+
+    @field_validator("mcp_instance_label")
+    @classmethod
+    def _empty_instance_label_to_default(cls, value: str) -> str:
+        # `MCP_INSTANCE_LABEL=` (empty/whitespace) means "unset", not an
+        # empty label that would render as "UniFi Network MCP ()".
+        return value.strip() or "production"
 
     @model_validator(mode="after")
     def _check_tls(self) -> Settings:

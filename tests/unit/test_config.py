@@ -31,6 +31,7 @@ def test_defaults(clean_env) -> None:
     assert s.mcp_auth_token.get_secret_value() == "test-token"
     assert s.mcp_bind_host == "0.0.0.0"
     assert s.mcp_bind_port == 8000
+    assert s.mcp_instance_label == "production"
     assert s.log_level == "INFO"
     assert s.log_format == "json"
     assert s.enable_write_tools is False
@@ -50,6 +51,12 @@ def test_empty_site_id_becomes_none(clean_env) -> None:
     assert _settings(unifi_site_id="").unifi_site_id is None
     assert _settings(unifi_site_id="   ").unifi_site_id is None
     assert _settings(unifi_site_id="abc-123").unifi_site_id == "abc-123"
+
+
+def test_empty_instance_label_becomes_default(clean_env) -> None:
+    assert _settings(mcp_instance_label="").mcp_instance_label == "production"
+    assert _settings(mcp_instance_label="   ").mcp_instance_label == "production"
+    assert _settings(mcp_instance_label="local-dev").mcp_instance_label == "local-dev"
 
 
 def test_base_url_requires_http_scheme(clean_env) -> None:

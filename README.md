@@ -59,6 +59,24 @@ uv run unifi-mcp        # Server starten (Default: 0.0.0.0:8000)
 
 Smoke-Check: `curl -s http://localhost:8000/healthz` (→ `{"status":"ok"}`) und `curl -s http://localhost:8000/readyz` (→ 200/`ready` wenn Gateway erreichbar).
 
+### Lokale Dev-Instanz für MCP-Clients (opencode)
+
+Um den aktuellen Quellcode ohne Image-Build/-Pull als MCP-Client zu testen, läuft eine lokale Dev-Instanz neben der deployten Prod-Version:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+Das Compose-File bindet `./src` in das letzte gebaute Prod-Image (`PYTHONPATH=/app/src`), setzt `MCP_INSTANCE_LABEL=local-dev` und bindet den Port nur auf `127.0.0.1:8000`. Code-Änderungen greifen nach `--force-recreate`; nur bei Dependency-Änderungen (`uv.lock`) muss das Image einmal neu gebaut werden (Kommentar im Compose-File).
+
+opencode verbindet sich in diesem Repo via projekt-lokaler `opencode.jsonc` (gitignored) als `unifi-local` mit `http://localhost:8000/mcp`. Voraussetzung: die Env-Variable `UNIFI_MCP_TOKEN` (gleicher Wert wie `MCP_AUTH_TOKEN` aus `.env`) ist im Shell-Profil exportiert:
+
+```bash
+export UNIFI_MCP_TOKEN="<Wert von MCP_AUTH_TOKEN aus .env>"
+```
+
+Neben dem zentralen `unifi` (via LiteLLM/K8s) sind die Tools dann unter den Präfixen `unifi-local_*` bzw. `unifi_*` getrennt sichtbar; die Instanz ist zusätzlich an Title/Instructions des Servers erkennbar (`Instance: "local-dev"` / `Instance: "production"`).
+
 ## Environment Variables
 
 Laden über `pydantic-settings`; echte Umgebungsvariablen überschreiben Werte aus `.env`. `.env` ist gitignored, Vorlage: [.env.example](.env.example).

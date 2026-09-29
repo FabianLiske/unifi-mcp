@@ -52,6 +52,16 @@ a tool explicitly supports them.
 """
 
 
+def _server_instructions(label: str) -> str:
+    """Server instructions prefixed with the instance label.
+
+    When a client is connected to several instances of this server (e.g. a
+    production deployment plus a local dev instance), the label is the
+    client-side signal that disambiguates them.
+    """
+    return f'Instance: "{label}".\n' + SERVER_INSTRUCTIONS
+
+
 class ReadinessProbe:
     """Caches the UniFi application-info check for ``/readyz``.
 
@@ -104,12 +114,13 @@ def build_server(
     *groups* overrides the default :data:`~unifi_mcp.tools.registry.TOOL_GROUPS`
     (used by tests to exercise individual tool groups without shipping them).
     """
+    label = settings.mcp_instance_label
     server = MCPServer(
         name="unifi-mcp",
-        title="UniFi Network MCP",
+        title=f"UniFi Network MCP ({label})",
         description="Read-only management and diagnostics for a local UniFi Network deployment.",
         version=_server_version(),
-        instructions=SERVER_INSTRUCTIONS,
+        instructions=_server_instructions(label),
     )
 
     @server.custom_route("/healthz", methods=["GET"])  # type: ignore[untyped-decorator]

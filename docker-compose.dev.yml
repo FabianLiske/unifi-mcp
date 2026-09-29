@@ -1,0 +1,37 @@
+# Lokale Dev-Instanz von unifi-mcp fuer MCP-Clients (z.B. opencode).
+#
+# Laeuft den AKTUELLEN Quellcode (./src via Bind-Mount + PYTHONPATH) auf dem
+# letzten gebauten Prod-Image — Code-Änderungen greifen nach
+# `docker compose -f docker-compose.dev.yml up -d --force-recreate`,
+# OHNE Image-Build oder -Pull.
+#
+# Nur wenn sich uv.lock / pyproject.toml (Dependencies) geaendert haben,
+# einmal das Image lokal bauen und den Tag unten aktualisieren:
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t ghcr.io/fabianliske/unifi-mcp:sha-$(git rev-parse --short HEAD) .
+#
+# Start/Stop:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down
+services:
+  unifi-mcp:
+    image: ghcr.io/fabianliske/unifi-mcp:sha-8197f05
+    env_file: .env
+    environment:
+      # .env has MCP_BIND_HOST=127.0.0.1 (fine for `uv run` on the host,
+      # unreachable from the published port inside a container) -> override.
+      MCP_BIND_HOST: 0.0.0.0
+      # Mounted source takes precedence over the package installed in the
+      # image venv, so the current ./src is always what runs.
+      PYTHONPATH: /app/src
+      # Surfaced in the MCP title/instructions so clients can tell this
+      # instance apart from the deployed production one.
+      MCP_INSTANCE_LABEL: local-dev
+    volumes:
+      - ./src:/app/src:ro
+    ports:
+      # localhost-only: dev instance, no network exposure
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp

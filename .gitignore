@@ -2,6 +2,10 @@
 .env
 certs/
 
+# Projekt-lokale Agent-Config (verweist auf localhost + Env-Vars)
+opencode.jsonc
+AGENTS.md
+
 # Python
 __pycache__/
 *.py[cod]

@@ -40,7 +40,9 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
 
         result = await session.initialize()
         assert result.server_info.name == "unifi-mcp"
+        assert result.server_info.title == "UniFi Network MCP (production)"
         assert result.instructions is not None
+        assert result.instructions.startswith('Instance: "production".')
         assert "UniFi" in result.instructions
 
         tools = await session.list_tools()
@@ -83,6 +85,22 @@ async def test_initialize_and_tools_list(mcp_app) -> None:
         for tool in tools.tools:
             assert tool.annotations is not None
             assert tool.annotations.read_only_hint is True
+
+
+async def test_initialize_advertises_custom_instance_label(mcp_app_factory) -> None:
+    """A non-default MCP_INSTANCE_LABEL is surfaced in title and instructions."""
+    async with mcp_app_factory(mcp_instance_label="local-dev") as (app, settings):
+        token = settings.mcp_auth_token.get_secret_value()
+        async with AsyncExitStack() as stack:
+            http_client = await stack.enter_async_context(_http_client(app, token))
+            read, write = await stack.enter_async_context(
+                streamable_http_client(_MCP_URL, http_client=http_client)
+            )
+            session = await stack.enter_async_context(ClientSession(read, write))
+            result = await session.initialize()
+    assert result.server_info.title == "UniFi Network MCP (local-dev)"
+    assert result.instructions.startswith('Instance: "local-dev".')
+    assert "UniFi" in result.instructions
 
 
 async def test_healthz_public(mcp_app) -> None:
