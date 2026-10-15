@@ -103,6 +103,27 @@ async def test_initialize_advertises_custom_instance_label(mcp_app_factory) -> N
     assert "UniFi" in result.instructions
 
 
+async def test_write_tools_appear_only_with_flag(mcp_app_factory) -> None:
+    """ENABLE_WRITE_TOOLS adds exactly the WP-15 write tools (28 total)."""
+    async with mcp_app_factory(enable_write_tools=True) as (app, settings):
+        token = settings.mcp_auth_token.get_secret_value()
+        async with AsyncExitStack() as stack:
+            http_client = await stack.enter_async_context(_http_client(app, token))
+            read, write = await stack.enter_async_context(
+                streamable_http_client(_MCP_URL, http_client=http_client)
+            )
+            session = await stack.enter_async_context(ClientSession(read, write))
+            tools = await session.list_tools()
+    names = [tool.name for tool in tools.tools]
+    assert len(names) == 28
+    write_tools = {"update_wifi", "update_acl_rule"}
+    assert set(names) & write_tools == write_tools
+    for tool in tools.tools:
+        expected_read_only = tool.name not in write_tools
+        assert tool.annotations is not None
+        assert tool.annotations.read_only_hint is expected_read_only
+
+
 async def test_healthz_public(mcp_app) -> None:
     app, _ = mcp_app
     async with _http_client(app, None) as http_client:

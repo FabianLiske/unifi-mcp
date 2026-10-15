@@ -1,0 +1,24 @@
+{
+  "id": "bc-main",
+  "name": "UbiquitiAP",
+  "type": "STANDARD",
+  "enabled": true,
+  "hideName": false,
+  "uapsdEnabled": false,
+  "channel2gLockedTo6": false,
+  "clientIsolationEnabled": false,
+  "dtimPeriod2gLockedTo3": false,
+  "multicastToUnicastConversionEnabled": false,
+  "broadcastingFrequenciesGHz": [2.4, 5],
+  "network": {
+    "type": "SPECIFIC",
+    "networkId": "net-lan"
+  },
+  "securityConfiguration": {
+    "type": "WPA2_PERSONAL",
+    "passphrase": "fixture-wifi-psk-87654321"
+  },
+  "metadata": {
+    "origin": "USER_DEFINED"
+  }
+}

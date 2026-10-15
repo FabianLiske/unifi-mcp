@@ -1,0 +1,25 @@
+{
+  "type": "IPV4",
+  "id": "acl-rule-allow",
+  "enabled": true,
+  "name": "040-0-TRUSTED-ALLOW-K8S",
+  "action": "ALLOW",
+  "index": 0,
+  "description": null,
+  "sourceFilter": {
+    "type": "IP_ADDRESSES_OR_SUBNETS",
+    "ipAddressesOrSubnets": [
+      "172.26.40.104",
+      "172.26.40.105"
+    ]
+  },
+  "destinationFilter": {
+    "type": "NETWORKS",
+    "networkIds": [
+      "net-k8s"
+    ]
+  },
+  "metadata": {
+    "origin": "USER_DEFINED"
+  }
+}

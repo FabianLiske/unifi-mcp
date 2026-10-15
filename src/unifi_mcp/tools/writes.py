@@ -29,11 +29,6 @@ import contextlib
 from typing import TYPE_CHECKING, Any, cast
 
 from unifi_mcp.safety.audit import get_audit_log
-from unifi_mcp.safety.guards import (
-    apply_patch,
-    assert_user_defined,
-    verify_expected_state,
-)
 from unifi_mcp.tools.common import unifi_error_to_dict, with_state_hash
 from unifi_mcp.tools.errors import InvalidValueError, StateMismatchError
 from unifi_mcp.unifi.errors import UniFiError
@@ -100,12 +95,28 @@ async def guarded_update(
       allowlist (§16);
     - :class:`UniFiError` — the gateway rejected the write.
     """
+    # Imported lazily: a module-level import would create a cycle
+    # (tools.acl/wifi -> tools.writes -> safety.guards -> tools.errors ->
+    # tools/__init__ -> tools.acl).
+    from unifi_mcp.safety.guards import (
+        apply_patch,
+        assert_user_defined,
+        verify_expected_state,
+    )
+
     # 1. read-before-write against fresh state (§14/§29).
     try:
         raw = await verify_expected_state(client, path, expected_state_hash, resource=resource)
     except StateMismatchError:
         _record(tool, site_id, object_id, object_name, {}, "state_changed")
         raise
+
+    # The caller often does not know the object's current name (that is part
+    # of the fresh state just fetched); derive it for the audit record.
+    if object_name is None and isinstance(raw, dict):
+        name = raw.get("name")
+        if isinstance(name, str) and name.strip():
+            object_name = name
 
     # 2. modifiability guard: only USER_DEFINED objects are writable.
     try:

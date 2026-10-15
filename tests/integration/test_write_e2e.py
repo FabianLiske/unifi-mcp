@@ -142,8 +142,9 @@ async def test_write_tool_present_when_flag_on(mcp_app_factory) -> None:
         names = await _list_tool_names(app, token)
         async with mcp_client_session(app, token) as session:
             tools = {t.name: t for t in (await session.list_tools()).tools}
-    assert "update_widget" in names
-    assert len(names) == 27
+        assert "update_widget" in names
+    # 26 read-only + the two WP-15 write tools (flag on) + the test widget.
+    assert len(names) == 29
     # a write tool must not advertise the read-only hint.
     assert tools["update_widget"].annotations is not None
     assert tools["update_widget"].annotations.read_only_hint is False

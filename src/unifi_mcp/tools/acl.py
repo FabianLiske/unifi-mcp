@@ -21,6 +21,7 @@ from unifi_mcp.tools.common import (
     wrap_tool,
 )
 from unifi_mcp.tools.errors import InvalidValueError, NotFoundError
+from unifi_mcp.tools.writes import guarded_update
 from unifi_mcp.unifi.errors import UniFiNotFoundError
 from unifi_mcp.unifi.normalization import clamp_limit, normalize
 
@@ -59,6 +60,18 @@ Returns the user-defined ACL rules in evaluation order: the list position
 is the order in which the gateway evaluates them (it matches the 'index'
 field of the rules, lower = earlier). Use the returned ids with
 get_acl_rule to inspect individual rules. This tool is read-only.
+"""
+
+DESCRIPTION_UPDATE = """\
+Toggles the enabled state of one ACL rule. This tool modifies the live
+network configuration: enabling a BLOCK rule starts dropping its matching
+traffic, disabling an ALLOW rule stops permitting it. Obtain rule_id from
+list_acl_rules and expected_state_hash from a recent get_acl_rule — the
+rule is re-fetched and re-hashed before the write, so a stale hash fails
+with state_changed. Only user-created rules (metadata.origin USER_DEFINED)
+can be modified; the rule's action, filters, and evaluation order are not
+changed by this tool. The result is the updated rule with a fresh
+state_hash.
 """
 
 #: user-friendly ``action`` value -> UniFi action enum (UPPERCASE, live-verified).
@@ -206,4 +219,45 @@ def register_acl_tools(server: MCPServer, client: UniFiClient, settings: Setting
         title="Get ACL Rule Ordering",
         description=DESCRIPTION_ORDERING,
         annotations=ToolAnnotations(read_only_hint=True),
+    )
+
+
+def register_acl_write_tools(server: MCPServer, client: UniFiClient, settings: Settings) -> None:
+    """Register the ACL write tools (gated by ``enable_write_tools``)."""
+
+    async def update_acl_rule(
+        rule_id: str,
+        expected_state_hash: str,
+        enabled: bool | None = None,
+        site_id: str | None = None,
+    ) -> dict[str, Any]:
+        site = await resolve_site(client, settings, site_id)
+        if enabled is None:
+            raise InvalidValueError(
+                "enabled",
+                value="<not provided>",
+                allowed=["true", "false"],
+                message="Provide the new 'enabled' value (true or false).",
+            )
+        try:
+            return await guarded_update(
+                client,
+                path=f"/sites/{site}/acl-rules/{rule_id}",
+                object_id=rule_id,
+                resource="acl_rule",
+                expected_state_hash=expected_state_hash,
+                changes={"enabled": enabled},
+                allowed_fields=frozenset({"enabled"}),
+                tool="update_acl_rule",
+                site_id=site,
+            )
+        except UniFiNotFoundError:
+            raise NotFoundError(resource="acl_rule", query=rule_id) from None
+
+    server.add_tool(
+        wrap_tool("update_acl_rule", settings.max_tool_response_bytes, update_acl_rule, write=True),
+        name="update_acl_rule",
+        title="Update ACL Rule",
+        description=DESCRIPTION_UPDATE,
+        annotations=ToolAnnotations(read_only_hint=False),
     )

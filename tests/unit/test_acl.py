@@ -12,6 +12,7 @@ from unifi_mcp.tools.acl import (
     build_acl_filter,
     clamp_params,
     register_acl_tools,
+    register_acl_write_tools,
 )
 from unifi_mcp.tools.errors import InvalidValueError
 
@@ -120,6 +121,63 @@ async def test_register_acl_tools(make_settings) -> None:
     assert params["get_acl_rule"] == {"rule_id", "site_id"}
     assert params["get_acl_rule_ordering"] == {"site_id"}
     assert "rule_id" in tools[1].input_schema.get("required", [])
+
+
+# --- update_acl_rule (WP-15 write tool) ----------------------------------------
+
+
+async def test_register_acl_write_tools(make_settings) -> None:
+    settings = make_settings()
+    server = MCPServer(name="t")
+    register_acl_write_tools(server, object(), settings)  # type: ignore[arg-type]
+    tools = await server.list_tools()
+    assert [tool.name for tool in tools] == ["update_acl_rule"]
+    tool = tools[0]
+    assert tool.annotations is not None and tool.annotations.read_only_hint is False
+    params = set(tool.input_schema["properties"])
+    assert params == {"rule_id", "expected_state_hash", "enabled", "site_id"}
+    assert set(tool.input_schema.get("required", [])) == {"rule_id", "expected_state_hash"}
+
+
+async def test_update_acl_rule_requires_enabled_value(make_settings, make_client) -> None:
+    settings = make_settings(unifi_site_id="site-x")
+    client = await make_client(settings)
+    server = MCPServer(name="t")
+    register_acl_write_tools(server, client, settings)
+    result = await server.call_tool(
+        "update_acl_rule",
+        {"rule_id": "acl-rule-allow", "expected_state_hash": "sha256:" + "0" * 64},
+    )
+    payload = result.structured_content
+    assert payload["error"] == "validation"
+    assert payload["field"] == "enabled"
+
+
+async def test_update_acl_rule_404_maps_to_not_found(
+    make_settings, make_client, respx_mock
+) -> None:
+    settings = make_settings(unifi_site_id="site-x")
+    client = await make_client(settings)
+    base = "http://gateway.test/proxy/network/integration/v1"
+    respx_mock.get(f"{base}/sites/site-x/acl-rules/acl-rule-missing").mock(
+        return_value=httpx.Response(
+            404, json={"code": "not-found", "message": "ACL rule not found."}
+        )
+    )
+    server = MCPServer(name="t")
+    register_acl_write_tools(server, client, settings)
+    result = await server.call_tool(
+        "update_acl_rule",
+        {
+            "rule_id": "acl-rule-missing",
+            "expected_state_hash": "sha256:" + "0" * 64,
+            "enabled": False,
+        },
+    )
+    payload = result.structured_content
+    assert payload["error"] == "not_found"
+    assert payload["resource"] == "acl_rule"
+    assert payload["query"] == "acl-rule-missing"
 
 
 # --- tool behavior (real client, respx-mocked API) ------------------------------

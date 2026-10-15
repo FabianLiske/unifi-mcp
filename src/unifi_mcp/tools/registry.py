@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from unifi_mcp.tools.acl import register_acl_tools
+from unifi_mcp.tools.acl import register_acl_tools, register_acl_write_tools
 from unifi_mcp.tools.clients import register_client_tools
 from unifi_mcp.tools.devices import register_device_tools
 from unifi_mcp.tools.dns import register_dns_tools
@@ -26,7 +26,7 @@ from unifi_mcp.tools.reference import register_reference_tools
 from unifi_mcp.tools.sites import register_site_tools
 from unifi_mcp.tools.system import register_system_tools
 from unifi_mcp.tools.traffic import register_traffic_tools
-from unifi_mcp.tools.wifi import register_wifi_tools
+from unifi_mcp.tools.wifi import register_wifi_tools, register_wifi_write_tools
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -43,6 +43,11 @@ GateFn = Callable[["Settings"], bool]
 def always_on(_settings: Settings) -> bool:
     """Gate for always-available (read-only) tool groups."""
     return True
+
+
+def write_enabled(settings: Settings) -> bool:
+    """Gate for write tool groups (design §13: off by default)."""
+    return settings.enable_write_tools
 
 
 @dataclass(frozen=True)
@@ -86,4 +91,8 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup(name="acl", gate=always_on, register=register_acl_tools),
     ToolGroup(name="traffic", gate=always_on, register=register_traffic_tools),
     ToolGroup(name="reference", gate=always_on, register=register_reference_tools),
+    # Write tools (WP-15): absent from tools/list while ENABLE_WRITE_TOOLS is
+    # off (the default) — gating at registration, design §37.
+    ToolGroup(name="wifi-writes", gate=write_enabled, register=register_wifi_write_tools),
+    ToolGroup(name="acl-writes", gate=write_enabled, register=register_acl_write_tools),
 )

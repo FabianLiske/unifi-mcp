@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 from mcp_types import ToolAnnotations
 
 from unifi_mcp.safety.redaction import REDACTED
-from unifi_mcp.tools.wifi import register_wifi_tools
+from unifi_mcp.tools.wifi import register_wifi_tools, register_wifi_write_tools
 
 BASE = "http://gateway.test/proxy/network/integration/v1"
 SITE = "site-test"
@@ -174,6 +175,83 @@ async def test_get_wifi_not_found(respx_mock, make_client, make_settings) -> Non
         return_value=httpx.Response(404, json={"code": "not-found", "message": "Not found."})
     )
     result = await server.tools["get_wifi"]["fn"](broadcast_id="nope")
+    assert result["error"] == "not_found"
+    assert result["resource"] == "wifi_broadcast"
+    assert result["query"] == "nope"
+
+
+# --- update_wifi (WP-15 write tool) -------------------------------------------
+
+
+async def _write_tools(make_client, make_settings) -> _RecordingServer:
+    settings = make_settings(unifi_site_id=SITE)
+    client = await make_client(settings)
+    server = _RecordingServer()
+    register_wifi_write_tools(server, client, settings)
+    return server
+
+
+async def test_register_wifi_write_tools(make_settings) -> None:
+    settings = make_settings()
+    server = _RecordingServer()
+    register_wifi_write_tools(server, object(), settings)  # type: ignore[arg-type]
+    assert list(server.tools) == ["update_wifi"]
+    entry = server.tools["update_wifi"]
+    assert entry["annotations"] is not None
+    assert entry["annotations"].read_only_hint is False
+    assert entry["title"]
+    assert "state_changed" in entry["description"]
+
+
+async def test_update_wifi_schema_params(make_client, make_settings) -> None:
+    import inspect
+
+    server = await _write_tools(make_client, make_settings)
+    params = inspect.signature(server.tools["update_wifi"]["fn"]).parameters
+    assert set(params) == {
+        "broadcast_id",
+        "expected_state_hash",
+        "name",
+        "enabled",
+        "site_id",
+    }
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 33])
+async def test_update_wifi_rejects_invalid_name_without_http(
+    make_client, make_settings, name: str
+) -> None:
+    server = await _write_tools(make_client, make_settings)
+    result = await server.tools["update_wifi"]["fn"](
+        broadcast_id="bc-main",
+        expected_state_hash="sha256:" + "0" * 64,
+        name=name,
+    )
+    assert result["error"] == "validation"
+    assert result["field"] == "name"
+
+
+async def test_update_wifi_requires_a_change(make_client, make_settings) -> None:
+    server = await _write_tools(make_client, make_settings)
+    result = await server.tools["update_wifi"]["fn"](
+        broadcast_id="bc-main",
+        expected_state_hash="sha256:" + "0" * 64,
+    )
+    assert result["error"] == "validation"
+    assert result["field"] == "changes"
+    assert result["allowed"] == ["name", "enabled"]
+
+
+async def test_update_wifi_404_maps_to_not_found(respx_mock, make_client, make_settings) -> None:
+    server = await _write_tools(make_client, make_settings)
+    respx_mock.get(f"{BASE}/sites/{SITE}/wifi/broadcasts/nope").mock(
+        return_value=httpx.Response(404, json={"code": "not-found", "message": "Not found."})
+    )
+    result = await server.tools["update_wifi"]["fn"](
+        broadcast_id="nope",
+        expected_state_hash="sha256:" + "0" * 64,
+        enabled=False,
+    )
     assert result["error"] == "not_found"
     assert result["resource"] == "wifi_broadcast"
     assert result["query"] == "nope"
