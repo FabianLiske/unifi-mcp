@@ -1,6 +1,6 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-22 (WP-0 … WP-14 done)
+Stand: 2026-09-29 (WP-0 … WP-14 done, WP-15 in_progress)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
 
 ## Scope
@@ -43,7 +43,7 @@ Server-seitig bleibt LiteLLM-Kompatibilität Teil dieses Repos: stateless Stream
 | WP-13 | ZBF Policies (Read)                    | 3        | done        | WP-12     |
 | WP-13b| Read-Tools: Device-Detail, DNS, ACL-Ordering, Pending | 3 | done | WP-13 |
 | WP-14 | Safe-Writes-Fundament                  | post-MVP | done        | WP-13     |
-| WP-15 | Erste Write-Tools                      | post-MVP | open        | WP-14     |
+| WP-15 | Erste Write-Tools                      | post-MVP | in_progress | WP-14     |
 | WP-16 | Restliche Write-Tools                  | post-MVP | open        | WP-15     |
 | WP-17 | Actions                                | post-MVP | open        | WP-16     |
 | WP-18 | Delete + Deep Diagnostics (optional)   | post-MVP | open        | WP-17     |
@@ -358,9 +358,27 @@ Status: `done`
 
 ### WP-15 — Erste Write-Tools
 
-Bewusst risikoarm: `update_wifi` (name/enabled), `update_acl_rule` (enabled).
+Bewusst risikoarm (Design-Doc Phase 2: „Zuerst nur wenige risikoarme Updates"): `update_wifi` (name/enabled), `update_acl_rule` (enabled). Beide hängen hinter `ENABLE_WRITE_TOOLS` (Default `false`) und bauen vollständig auf dem WP-14-Fundament (`guarded_update`: fresh read → state_hash → USER_DEFINED → Field-Allowlist → Full-Replace-PUT → Audit) — keine neue Schutzlogik.
 
-Status: `open`
+Abnahme (Design-Doc Phase 2): „Jede Änderung ist gegen stale state geschützt und im Audit Log nachvollziehbar." Code + Tests: erfüllt. Live-Smoke: **ausstehend** — das Gateway-UCG hatte zur Umsetzungszeit (2026-09-29) eine API-Überlastung (WebUI/API beantwortete mit ~57 s, konfiguriertes Timeout 15 s → `ReadTimeout`); Datenebene blieb dabei betriebsbereit. Live-Schritte werden nach Last-Rückgang nachgeholt.
+
+- [x] **Tool-Design (typisierte Parameter statt `changes`-Dict):** `update_wifi(broadcast_id, expected_state_hash, name?, enabled?, site_id?)`, `update_acl_rule(rule_id, expected_state_hash, enabled?, site_id?)` — erlaubte Felder: WiFi `name` (stripped, nicht leer, ≤32 Zeichen) + `enabled`, ACL nur `enabled`; keine-Änderung → `validation` vor dem ersten HTTP-Call; 404 im Read-before-write → strukturiertes `not_found` (resource + query) wie bei den Read-Tools
+- [x] `tools/wifi.py`: `register_wifi_write_tools`; `tools/acl.py`: `register_acl_write_tools` — §31-Descriptions (inkl. Warnung: `enabled=false` trennt WiFi-Clients / schaltet ACL-Regeln live um), `wrap_tool(..., write=True)` (`record_write_request`), `ToolAnnotations(read_only_hint=False)`
+- [x] `tools/registry.py`: zwei neue `ToolGroup`s `wifi-writes`/`acl-writes` mit Gate `enable_write_tools` — Flag aus → Tools fehlen in `tools/list` (26 read-only); Flag an → 28
+- [x] **PSK-Handling (WLAN):** Full-Replace-PUT round-trippt `securityConfiguration.passphrase` aus dem rohen Objekt des Read-before-write (OpenAPI: WPA3-Personal-DTO verlangt `passphrase` + `saeConfiguration`) — PSK bleibt im Prozess; E2E-Assertion: roher PSK **im PUT-Body** vorhanden, in der Tool-Response redigiert (`[REDACTED]`) und in keinem JSON-Dump
+- [x] `tools/writes.py`: `guarded_update` leitet `object_name` aus dem frisch gelesenen rohen Objekt ab (Audit-Ereignisse tragen den SSID-/Regel-Namen ohne Extra-Call); lazy Import von `safety.guards` (Import-Zyklus `tools.acl → tools.writes → safety.guards → tools.errors → tools/__init__ → tools.acl` aufgelöst)
+- [x] Fixtures: `wifi_broadcast_detail.json` (Detail-Shape inkl. aller DTO-required-Felder + rohem PSK, `origin: USER_DEFINED`), `acl_rule_detail.json` (inkl. `description: null`, wie live beobachtet)
+- [x] **E2E** `tests/integration/test_wp15_e2e.py` (10 Tests) über echte ASGI/MCP-Stack mit echten Write-Groups: Flag off → 26 Tools (keine Write-Wörter); Flag on → 28 (nur die zwei ohne read-only-hint); stale-Hash → `state_changed` + 0 PUT + Audit (je Tool); `origin != USER_DEFINED` → `validation` (field `metadata.origin`) + 0 PUT; invalid `name` (leer/whitespace/33 Zeichen, parametrisiert) → `validation` + 0 PUT; keine Änderungen → `validation` (field `changes`/`enabled`) + 0 PUT; Success → **genau 1 PUT** (Body = rohes Objekt ohne `id`/`metadata`, WiFi mit rohem PSK, ACL mit intaktem `index`/Filter), normalisierte Response + frischer `state_hash`, Audit `ok` mit Diff + Objekt-Name
+- [x] Contract-Test: Flag on → exakt 28 Tools, read-only-hints korrekt (26 true, 2 false); Default-Test unverändert (26, keine Write-Wörter)
+- [x] Unit-Tests: `test_wifi.py` (Registration, Schema-Parameter, name-Validierung ×3, no-change, 404→`not_found`), `test_acl.py` (Registration + Input-Schema, enabled-pflichtig, 404→`not_found`)
+- [x] `tests/integration/test_write_e2e.py`: Flag-on-Count 27 → 29 angepasst (26 + 2 WP-15-Tools + 1 Test-Widget)
+- [x] Doku: README (Tool-Tabelle +2, `ENABLE_WRITE_TOOLS`-Zeile, Sicherheitsmodell, Tests-Abschnitt)
+- [x] Lokal: ruff check + ruff format + mypy strict (38 Dateien) + pytest (**452 Tests**) grün
+- [ ] **Live-Discovery (read-only, nach Gateway-Last-Rückgang):** Detail-Shapes `GET /wifi/broadcasts/{id}` + `GET /acl-rules/{id}` live verifizieren (OpenAPI-10.6.106-DTO als Vorlage genutzt; Detail-Shape der Fixtures aus List-Shape + DTO-Feldern rekonstruiert) und **`metadata.origin`-Werte live prüfen** — der Guard verlangt exakt `USER_DEFINED` (fail-closed); entscheidet, ob die Tools live feuern können. Offene Frage aus OpenAPI-Analyse: `description: null` im ACL-PUT-Body (Detail round-trippt es so — live bestätigen)
+- [ ] **Live-Smoke (nach Gateway-Last-Rückgang, per User-Entscheidung ACL-Regel-Toggle):** Readiness-Gate `GET /info` <5 s → Kandidatenwahl unter den live ACL-Regeln (minimaler Impact, User-Confirmation vor dem ersten Write) → `get_acl_rule` (Hash) → `update_acl_rule(enabled=¬current)` → verifizieren → Restore → verifizieren; Audit-Log: beide Writes + Restore mit Diff nachvollziehbar; zusätzlich `state_hash` über zwei unabhängige WiFi-Reads stabil
+- [ ] WP-15 in dieser Datei auf `done` + CI nach Commit/Push grün
+
+Status: `in_progress` (Code + Tests fertig; Live-Schritte blockiert auf Gateway-Verfügbarkeit)
 
 ### WP-16 — Restliche Write-Tools
 

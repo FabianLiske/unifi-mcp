@@ -416,6 +416,33 @@ Write-Tool):
   über die v1-Integration-API.
 
 → Fundament für Design §14/§15/§16/§27: `state_hash` über den normalisierten
-  Detail-Read, Read-before-write gegen frischen Fetch (§29), Field-Allowlists,
-  Full-Replace-PUT aus dem rohen Objekt, Write-Audit-Log (auch für abgelehnte
-  Versuche).
+Detail-Read, Read-before-write gegen frischen Fetch (§29), Field-Allowlists,
+Full-Replace-PUT aus dem rohen Objekt, Write-Audit-Log (auch für abgelehnte
+Versuche).
+
+### 11a. WP-15: Update-DTOs für `update_wifi` / `update_acl_rule` (OpenAPI-Analyse, 10.6.106)
+
+- **WiFi-Broadcast-Update-DTO** (`PUT /sites/{site}/wifi/broadcasts/{id}`)
+  required: `channel2gLockedTo6, clientIsolationEnabled,
+  dtimPeriod2gLockedTo3, enabled, hideName,
+  multicastToUnicastConversionEnabled, name, securityConfiguration, type,
+  uapsdEnabled` — die Detail-Reads liefern genau diese Felder, der
+  Full-Replace-Roundtrip aus dem rohen Detail-Objekt ist daher DTO-konform.
+  `securityConfiguration` ist eine Diskriminierungs-Union über `type`;
+  **`WPA3_PERSONAL` verlangt `passphrase` + `saeConfiguration`** (während
+  `WPA2_PERSONAL` keine required-Felder deklariert) → der PUT-Body muss die
+  `passphrase` aus dem rohen Detail-Read enthalten (bleibt im Prozess,
+  wird nie ans LLM ausgegeben).
+- **ACL-Rule-Update-DTO** (`PUT /sites/{site}/acl-rules/{id}`) required:
+  `action, enabled, name, type`; `description`, `index`, `enforcingDeviceFilter`,
+  `sourceFilter`, `destinationFilter` optional. Detail-Reads round-trippen
+  `description: null` (live WP-14: alle 4 ACL-Regeln `description=None`) —
+  der Body enthält sie also als `null`; ob das Gateway das akzeptiert, ist
+  per Live-Write zu bestätigen (das UI round-trippt dieselbe Form).
+- **Live-Verifikation ausstehend** (2026-09-29): zur Implementierungszeit
+  hatte das UCG eine API-Überlastung (WebUI/API antwortete nach ~57 s,
+  Client-Timeout 15 s → `ReadTimeout`; Datenebene betriebsbereit).
+  Offene Live-Checks: (1) Detail-Shapes beider Ressourcen, (2)
+  `metadata.origin`-Werte der live WiFi-Broadcasts und ACL-Regeln
+  (Guard verlangt exakt `USER_DEFINED`, fail-closed), (3) erster Live-PUT
+  (geplanter Smoke-Test: ACL-Regel `enabled` toggle + Restore).

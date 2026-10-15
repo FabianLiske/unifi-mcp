@@ -96,7 +96,7 @@ Laden über `pydantic-settings`; echte Umgebungsvariablen überschreiben Werte a
 | `MCP_BIND_PORT` | `8000` | Port von `/mcp`, `/healthz`, `/readyz` |
 | `LOG_LEVEL` | `INFO` | `DEBUG` … `CRITICAL` |
 | `LOG_FORMAT` | `json` | `json` oder `text` |
-| `ENABLE_WRITE_TOOLS` | `false` | Feature-Flag. Safe-Writes-Fundament ist implementiert (WP-14); erste echte Write-Tools folgen in WP-15 — solange Flag aus, bleiben alle Tools read-only |
+| `ENABLE_WRITE_TOOLS` | `false` | Feature-Flag für die Write-Tools `update_wifi` und `update_acl_rule` (WP-15). Solange das Flag aus ist, sind alle Tools read-only; eingeschaltet erscheinen die Write-Tools in `tools/list` |
 | `ENABLE_ACTION_TOOLS` | `false` | Feature-Flag (MVP: aus, Tools nicht implementiert) |
 | `ENABLE_DELETE_TOOLS` | `false` | Feature-Flag (MVP: aus, Tools nicht implementiert) |
 | `MAX_LIST_ITEMS` | `200` | Obergrenze für List-Tools (limit-Parameter) |
@@ -159,7 +159,7 @@ mcp_servers:
 
 ## Tool-Liste
 
-Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. List-Tools unterstützen `limit`/`offset` (Default 50, max. `MAX_LIST_ITEMS`); `next_offset` im Ergebnis signalisiert, dass weitere Seiten folgen.
+Alle Tools geben normalisierte, redigierte Daten zurück. List-Tools unterstützen `limit`/`offset` (Default 50, max. `MAX_LIST_ITEMS`); `next_offset` im Ergebnis signalisiert, dass weitere Seiten folgen. Die zwei Write-Tools (`update_wifi`, `update_acl_rule`) sind nur bei `ENABLE_WRITE_TOOLS=true` registriert.
 
 ### System
 
@@ -210,6 +210,7 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | --- | --- |
 | `list_wifi` | WiFi-Profile (SSIDs) mit Sicherheitsmodus, gekoppeltem Network und Bands; PSK wird redigiert und nie zurückgegeben |
 | `get_wifi` | Vollständige Konfiguration eines WiFi-Profils; PSK wird redigiert und nie zurückgegeben |
+| `update_wifi` *(nur bei `ENABLE_WRITE_TOOLS=true`)* | Ändert `name` (neuer SSID-Name, ≤32 Zeichen) und/oder `enabled` eines WiFi-Profils; `enabled=false` trennt alle Clients des SSIDs. Verlangt `expected_state_hash` aus `get_wifi` |
 
 ### Firewall
 
@@ -228,6 +229,7 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | `list_acl_rules` | ACL-Regeln mit Action, enabled-Flag, Regel-Index und Endpoint-Filtern (Summary); Filter `action`, `enabled`, `source`, `destination` |
 | `get_acl_rule` | Eine ACL-Regel inkl. vollständiger Source-/Destination-Filter |
 | `get_acl_rule_ordering` | Evaluationsreihenfolge aller ACL-Regeln der Site als ID-Liste (Liste = `index`-Reihenfolge, niedriger = zuerst) |
+| `update_acl_rule` *(nur bei `ENABLE_WRITE_TOOLS=true`)* | Schaltet `enabled` einer ACL-Regel um (Action, Filter und Reihenfolge bleiben unverändert). Verlangt `expected_state_hash` aus `get_acl_rule` |
 
 ### Traffic
 
@@ -242,12 +244,10 @@ Alle Tools sind read-only und geben normalisierte, redigierte Daten zurück. Lis
 | --- | --- |
 | `list_reference_resources` | Selten genutzte Lookup-Tabellen in einem Tool: `countries`, `dpi_applications`, `dpi_categories`, `device_tags`, `radius_profiles`, `site_to_site_vpn_tunnels`, `vpn_servers`, `wan_interfaces` |
 
-Hinweis: Im Design-Doc sind zusätzlich `get_device`, `get_device_stats` und `list_pending_devices` skizziert; diese sind im aktuellen Stand noch nicht implementiert (siehe PROGRESS.md).
-
 ## Read/Write-Sicherheitsmodell
 
-- **Read-only-Default:** Es werden nur Read-Tools registriert. Write/Action/Delete-Gruppen hängen hinter den Feature-Flags `ENABLE_WRITE_TOOLS` / `ENABLE_ACTION_TOOLS` / `ENABLE_DELETE_TOOLS` (alle `false`) und werden beim Gating **bei der Registrierung** übersprungen — abgeschaltete Tools fehlen in `tools/list` komplett, statt erst zur Laufzeit abgelehnt zu werden. Im MVP sind die echten Write-Tools noch nicht enthalten; das **Safe-Writes-Fundament** (WP-14) ist dagegen schon da (siehe unten).
-- **Safe-Writes-Fundament (WP-14):** Die Basis für spätere Write-Tools ist implementiert und durch E2E-Tests abgesichert, auch wenn kein echtes Write-Tool aktiv ist:
+- **Read-only-Default:** Standardmäßig werden nur Read-Tools registriert. Die Write-Tools `update_wifi` / `update_acl_rule` (WP-15) hängen hinter `ENABLE_WRITE_TOOLS` (Default `false`), Action/Delete-Gruppen hinter `ENABLE_ACTION_TOOLS` / `ENABLE_DELETE_TOOLS` (noch nicht implementiert). Alle drei Flags schalten beim Gating **bei der Registrierung** ab — abgeschaltete Tools fehlen in `tools/list` komplett, statt erst zur Laufzeit abgelehnt zu werden.
+- **Safe-Writes-Fundament (WP-14, von `update_wifi`/`update_acl_rule` in WP-15 genutzt):** Die Basis für Write-Tools ist implementiert und durch E2E-Tests abgesichert:
   - **`state_hash`:** Jedes `get_*` für veränderbare Objekte (`get_wifi`, `get_network`, `get_acl_rule`, `get_firewall_zone`, `get_firewall_policy`, `get_traffic_matching_list`, `get_dns_policy`) liefert zusätzlich einen `sha256:`-Hash über die normalisierte, secret-freie Darstellung. Volatile Laufzeit-Stats und Secrets wirken nicht auf den Hash.
   - **Read-before-write:** Ein Write holt das Objekt **neu** (nie gecacht) und vergleicht den aktuellen Hash mit `expected_state_hash`; bei Abweichung wird **nicht** geschrieben → Fehler `state_changed` (mit `current_state_hash` zum Sofort-Retry).
   - **Modifiability-Guard:** Nur Objekte mit `metadata.origin == USER_DEFINED` sind schreibbar; System-/abgeleitete Objekte werden abgelehnt (fail-closed).
@@ -266,7 +266,7 @@ Hinweis: Im Design-Doc sind zusätzlich `get_device`, `get_device_stats` und `li
 ## Tests
 
 - `tests/unit/` — Unit-Tests: Config/Validierung, UniFi-Client (Auth, Timeouts, Error-Mapping 401/403/404/429), TLS-Modi, Redaction, Normalisierung, Auth-Middleware, Metriken, Logging, Readiness sowie je Modul Registration- und Verhaltenstests der Tools (mit `respx`-Mocks).
-- `tests/integration/` — MCP-Contract-Test (stateless Streamable HTTP, Bearer-Auth, Tool-Liste) und E2E-Tests gegen eine Fake-UniFi-API (gesamter Pfad: Client → Tool → redigierter Output). `test_write_e2e.py` übt das Safe-Writes-Fundament (WP-14) über einen nur-zur-Test-Write-Tool: Gating per Feature-Flag, `state_changed` ohne PUT, Allowlist-/Origin-Guards, genau ein Full-Replace-PUT bei korrektem Hash, Audit-Log.
+- `tests/integration/` — MCP-Contract-Test (stateless Streamable HTTP, Bearer-Auth, Tool-Liste) und E2E-Tests gegen eine Fake-UniFi-API (gesamter Pfad: Client → Tool → redigierter Output). `test_write_e2e.py` übt das Safe-Writes-Fundament (WP-14) über einen nur-zur-Test-Write-Tool: Gating per Feature-Flag, `state_changed` ohne PUT, Allowlist-/Origin-Guards, genau ein Full-Replace-PUT bei korrektem Hash, Audit-Log. `test_wp15_e2e.py` deckt die echten Write-Tools `update_wifi`/`update_acl_rule` ab — u. a. dass der rohe WiFi-PSK im PUT-Body round-trippt, aber **nie** in der Tool-Response auftaucht.
 - `tests/fixtures/` — Platzhalter für API-Response-Fixtures.
 
 ```bash
