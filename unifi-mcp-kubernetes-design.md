@@ -50,6 +50,17 @@ http://unifi-mcp.ai-tools.svc.cluster.local:8000/mcp
 
 Ein Ingress ist für den Produktivbetrieb nicht nötig. Optional kann ein interner Ingress für manuelles Debugging bereitgestellt werden.
 
+## Repo-Grenzen und Deployment-Verantwortung
+
+- **App-Repo `unifi-mcp`:** Quellcode, Container-Image, CI (GitHub Actions, Build & Push auf Push auf `master`/Tags → `ghcr.io/fabianliske/unifi-mcp:sha-<short-sha>`, multi-arch), lokale Konfig-Beispiele (`.env.example`), Dokumentation.
+- **Deploy-Repo `k3s-homelab-cluster` (Branch `main`):** Namespace, Deployment, Service, NetworkPolicies, SOPS-encrypted Secrets, LiteLLM-MCP-Konfiguration und der eigentliche Rollout. Alle Cluster-Änderungen laufen über Flux GitOps (Kustomization `apps` mit Sops-Dekodierung); imperatives `kubectl apply` ist der Ausnahmeweg.
+- **Image-Bump im Deploy-Repo:** Der Image-Tag in `apps/internal/llm/unifi-mcp/deployment.yaml` wird nach dem CI-Build manuell angepasst und dort separat committed — ein Push auf `master` des App-Repos allein ändert den Image-Tag im Cluster nicht.
+- **Secrets** (`UNIFI_API_KEY`, `MCP_AUTH_TOKEN`) liegen ausschließlich als SOPS/age-encrypted Secret im Deploy-Repo und werden von Flux dekodiert; das App-Repo kennt nur die Environment-Variablennamen (siehe `.env.example`).
+
+### Namespace-Vermerk (Stand 2026-10-15)
+
+Dieses Dokument verwendet in Beispielen den Namespace `ai-tools`. Der tatsächlich eingerollte Namespace ist `svc-llm` (Deploy-Repo, `apps/internal/llm/kustomization.yaml`). Der Namespace wird im Deploy-Repo zentral gesetzt — der Abschnitt in diesem Dokument dient der Dokumentation der Architektur, nicht als bindende Soll-Namensgebung. Die konkrete Namensgebung (Namespace, Label-Strategie, Service-Name) wird im Deploy-Repo gepflegt; die Architektur-Entscheidung in diesem Dokument (ClusterIP-Service, non-root, NetworkPolicies, Bearer-Auth, Multi-Arch-Image) bleibt davon unberührt.
+
 ---
 
 # 2. Nicht-Ziele
@@ -1046,6 +1057,8 @@ ai-tools
 ```
 
 oder der Namespace, in dem bereits andere MCP-/Agent-Dienste laufen.
+
+> **Hinweis (E02, 2026-10-15):** Der tatsächlich eingerollte Namespace ist `svc-llm` (Deploy-Repo `k3s-homelab-cluster`, `apps/internal/llm/`). Die konkrete Namensgebung — Namespace, Labels, Service-Name, Deployment-Name — wird im Deploy-Repo gepflegt; dieser Abschnitt dokumentiert die Architektur, nicht die Soll-Namensgebung. Details: siehe „Repo-Grenzen und Deployment-Verantwortung" oben.
 
 ---
 

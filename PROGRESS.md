@@ -1,7 +1,9 @@
 # Entwicklungstracking — unifi-mcp
 
-Stand: 2026-09-29 (WP-0 … WP-14 done, WP-15 in_progress)
+Stand: 2026-10-15 (WP-0 … WP-14 done, WP-15 in_progress)
 Quelldokument: [unifi-mcp-kubernetes-design.md](unifi-mcp-kubernetes-design.md)
+
+> **E02-Doku-Sync 2026-10-15:** Cluster-seitiger DoD-Abschnitt und „Offene Punkte" gegen das Deploy-Repo (`k3s-homelab-cluster`, Branch `main`) und den Live-Cluster abgeglichen (Deployments non-root + SA-Token aus, SOPS-Secrets, NetworkPolicies, LiteLLM-Kopplung verifiziert). WP-15 bleibt `in_progress` — Live-Schritte sind offen, bis die Gateway-Untersuchung (F01–F09) abgeschlossen ist und ein Zeitfenster vereinbart wurde.
 
 ## Scope
 
@@ -403,9 +405,9 @@ Status: `open`
 
 - [x] TLS zum Gateway: entschieden — `UNIFI_TLS_MODE=strict|extract-once|insecure` (Default `extract-once`); `strict` per CA-Bundle (SOPS-Secret im Deploy-Repo, falls gepinnt werden soll), `insecure` nur lokale Dev
 - [x] API-Key vorhanden — **aber voller Admin** (keine pro-Key-Scopes); Read-only nur server-seitig. Empfehlung: view-only Admin (Details: `docs/unifi-api-notes.md` §9)
-- [ ] SOPS/Flux im Deploy-Repo: Secrets für API-Key + MCP-Token (Cert-Secret nur bei `strict`)
+- [x] SOPS/Flux im Deploy-Repo: `unifi-mcp-secret` (SOPS/age, Keys `UNIFI_API_KEY` + `MCP_AUTH_TOKEN`) existiert, wird von `apps.yaml` (Kustomization `apps`, Sops-Dekodierung) in `svc-llm` ausgerollt; Cert-Secret nur bei `strict` (aktuell `extract-once` → nicht benötigt). Abgleich E02, 2026-10-15
 - [x] GH-Actions: beide Architekturen — `linux/amd64,linux/arm64` (buildx-Cross-Build, Muster `workflow-example.yaml`)
-- [ ] Design-Doc-Dateiname/-Titel sagt „Kubernetes", Deployment-Abschnitte betreffen aber das Deploy-Repo — evtl. im Doc vermerken
+- [x] Design-Doc-Dateiname/-Titel sagt „Kubernetes", Deployment-Abschnitte betreffen aber das Deploy-Repo — im Doc vermerkt (E02, 2026-10-15): neuer Abschnitt „Repo-Grenzen und Deployment-Verantwortung" + Hinweis im Namespace-Abschnitt, dass `svc-llm` realer Namespace ist
 
 ## MVP Definition of Done (Referenz §47)
 
@@ -427,9 +429,11 @@ Status: `open`
 
 ### Cluster-seitig (→ Deploy-Repo)
 
-- [ ] Deployment läuft non-root, ServiceAccount-Token deaktiviert
-- [ ] SOPS-verschlüsselte Secrets (API-Key, MCP-Token; Cert-Secret nur bei `strict`)
-- [ ] NetworkPolicy begrenzt Ingress (nur LiteLLM) und Egress (DNS + Gateway:443)
-- [ ] LiteLLM verbindet sich per ClusterIP
-- [ ] LiteLLM-Permissions: nur freigeschaltete Keys
-- [ ] Test über LiteLLM erfolgreich
+Abgeprüft gegen Deploy-Repo + Live-Cluster, 2026-10-15 (E02).
+
+- [x] Deployment läuft non-root (UID 10001), ServiceAccount-Token deaktiviert (`automountServiceAccountToken: false`)
+- [x] SOPS-verschlüsselte Secrets (API-Key, MCP-Token; Cert-Secret nur bei `strict`) — `apps/internal/llm/unifi-mcp/unifi-mcp-secret.yaml`, `lastmodified 2026-09-24`; ohne Duplikate (das `archive/unifi/`-Manifest gehört zum alten, archivierten UniFi-Network-Deployment und ist nicht referenziert)
+- [x] NetworkPolicy begrenzt Ingress (nur LiteLLM) und Egress (DNS + Gateway:443) — `netpol-ingress-llm.yaml` + `netpol-egress.yaml`
+- [x] LiteLLM verbindet sich per ClusterIP (`unifi-mcp.svc-llm.svc.cluster.local:8000` in `mcp_servers`); Bearer-Token-Kopplung korrekt: LiteLLM-Env `UNIFI_MCP_TOKEN` ← Key `MCP_AUTH_TOKEN` aus dem selben SOPS-Secret
+- [ ] LiteLLM-Permissions: nur freigeschaltete Keys — LiteLLM-Config enthält keine explizite MCP-Server-Permissions; die Schicht ist vorhanden (Master-Key), aber MCP-spezifische Key-/Team-Permissions sind noch nicht gesetzt (offen, Deploy-Repo)
+- [ ] Test über LiteLLM erfolgreich — Pod 1/1 Ready seit 2026-09-24 und Probe-Status sind nicht gleichbedeutend mit einem dokumentierten MCP-End-to-End-Test über LiteLLM (Readiness ≠ Funktionsnachweis); gehört zu WP-15-Live-Schritten / F06-Abnahme
