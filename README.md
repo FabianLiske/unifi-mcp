@@ -27,13 +27,15 @@ OpenCode / LiteLLM / andere MCP-Clients
    {UNIFI_BASE_URL}/proxy/network/integration/v1
 ```
 
-- `unifi/` — HTTP-Client gegen die offizielle API (Stateless, keine Sessions), Capability-Check beim Start, TLS-Handling, Normalisierung (Uppercase-Enums, Paging-Envelope).
+- `unifi/` — HTTP-Client gegen die offizielle API (Stateless, keine Sessions), lazy Capability-Check in Read-Tools, TLS-Handling, Normalisierung (Uppercase-Enums, Paging-Envelope).
 - `tools/` — Tool-Registry mit Feature-Flag-Gates pro Gruppe; jedes Tool läuft durch `wrap_tool` (Metriken, Response-Size-Cap, strukturierte Fehler).
 - `auth/` — ASGI-Middleware: statisches Bearer-Token auf `/mcp`, `/healthz` und `/readyz` bleiben öffentlich (Kubernetes-Probes).
 - `safety/` — rekursive, field-name-basierte Secret-Redaction.
 - `observability/` — structlog (JSON/Text, `request_id`) und Prometheus-Metriken mit begrenzten Labels.
 
-Der Server ist stateless ausgelegt: keine langlebigen MCP-Sessions — trivial horizontal skalierbar, restart-freundlich. Endpunkte: `/mcp` (MCP), `/healthz` (Liveness, nur Prozess), `/readyz` (Readiness, Gateway-Reachability, max. 1×/30 s gecacht, 503 wenn Gateway nicht erreichbar).
+Der Server ist stateless ausgelegt: keine langlebigen MCP-Sessions — trivial horizontal skalierbar, restart-freundlich. Endpunkte: `/mcp` (MCP), `/healthz` (Liveness, nur Prozess), `/readyz` (lokale Readiness: validierte Config, initialisiertes Audit-Logging inkl. stdout-Fallback, gebautes MCP-App, gestarteter Lifespan, offener HTTP-Client). Ein langsames oder ausgefallenes Gateway ändert den HTTP-Status von `/readyz` nicht.
+
+`/readyz` enthält zusätzlich einen rein informativen `upstream`-Snapshot. Ein Lifespan-Task prüft `/info` unmittelbar nach Start und danach mit mindestens 30 s Pause nach jedem Abschluss. Pro Zyklus genau ein Versuch ohne Retries, mit 3 s Gesamtzeitlimit; nie parallele Checks, beim Shutdown wird der laufende Check abgebrochen und gejoint. Probe-Aufrufe selbst machen keine Netzwerk- oder Dateizugriffe. `upstream.status`: `stale` vor der ersten Prüfung oder bei veraltetem Ergebnis (> Intervall + Zeitlimit), `ok` nach Erfolg, `down` bei Fehler ohne bisherigen Erfolg, `degraded` bei Fehler nach Erfolg. Snapshot-Felder: `application_version`, `last_latency_ms`, `last_success_at`, `last_failure_at`, `last_error` (nur Exception-Klasse), `consecutive_failures`, `last_check_age_seconds`. Zeitstempel sind prozesslokale monotone Sekunden, keine UTC-Zeit; vor der ersten Prüfung ist das Alter `null`. Die öffentliche Route gibt keine Fehlermeldungen oder Credentials aus. Read-Tools melden Gateway-Fehler weiterhin strukturiert; Readiness ersetzt keine Prüfung der Gateway-Gesundheit.
 
 ## Voraussetzungen
 
@@ -57,7 +59,7 @@ uv sync                 # Dependencies aus uv.lock installieren
 uv run unifi-mcp        # Server starten (Default: 0.0.0.0:8000)
 ```
 
-Smoke-Check: `curl -s http://localhost:8000/healthz` (→ `{"status":"ok"}`) und `curl -s http://localhost:8000/readyz` (→ 200/`ready` wenn Gateway erreichbar).
+Smoke-Check: `curl -s http://localhost:8000/healthz` (→ `{"status":"ok"}`) und `curl -s http://localhost:8000/readyz` (→ 200/`ready` wenn lokal betriebsbereit, auch bei ausgefallenem Gateway; Gateway-Zustand im Feld `upstream`).
 
 ### Lokale Dev-Instanz für MCP-Clients (opencode)
 
@@ -94,6 +96,8 @@ Laden über `pydantic-settings`; echte Umgebungsvariablen überschreiben Werte a
 | `MCP_AUTH_TOKEN` | — (Pflicht) | Bearer-Token für MCP-Clients (Secret), z. B. `openssl rand -hex 32` |
 | `MCP_BIND_HOST` | `0.0.0.0` | Bind-Adresse des MCP-Endpoints |
 | `MCP_BIND_PORT` | `8000` | Port von `/mcp`, `/healthz`, `/readyz` |
+| `UPSTREAM_CHECK_INTERVAL_SECONDS` | `30` | Pause nach abgeschlossenem Hintergrund-Check, endlich und > 0; kein Readiness-Gate |
+| `UPSTREAM_CHECK_TIMEOUT_SECONDS` | `3` | Gesamtzeitlimit je retry-freiem Hintergrund-Check, endlich und > 0 |
 | `LOG_LEVEL` | `INFO` | `DEBUG` … `CRITICAL` |
 | `LOG_FORMAT` | `json` | `json` oder `text` |
 | `ENABLE_WRITE_TOOLS` | `false` | Feature-Flag für die Write-Tools `update_wifi` und `update_acl_rule` (WP-15). Solange das Flag aus ist, sind alle Tools read-only; eingeschaltet erscheinen die Write-Tools in `tools/list` |
@@ -281,7 +285,7 @@ CI (`.github/workflows/ci.yaml`) führt auf Push/PR exakt diese Schritte aus. De
 ## Troubleshooting
 
 - **401 am `/mcp`:** Kein `Authorization: Bearer`-Header gesendet — Token auf Client-Seite (LiteLLM `auth_value`) prüfen. **403:** Token vorhanden, aber nicht identisch zu `MCP_AUTH_TOKEN` des MCP-Servers.
-- **`/readyz` liefert 503:** Der Server läuft, aber das Gateway ist nicht erreichbar (bzw. Auth zum Gateway fehlerhaft). `UNIFI_BASE_URL`, TLS-Modus und `UNIFI_API_KEY` prüfen; `/healthz` bleibt dabei `200`. Die Readiness-Prüfung läuft max. alle 30 s — ein just repariertes Gateway kann bis zu 30 s nicht sichtbar werden.
+- **`/readyz` liefert 503:** Lokaler Defekt: Lifespan nicht gestartet/bereits beendet oder HTTP-Client geschlossen/unbrauchbar; `detail` und lokale Startup-Logs prüfen. Ungültige Config oder Fehler beim App-Aufbau verhindern den Start. Ein nicht erreichbares Gateway allein führt nicht zu 503. Bei `upstream.status=down/degraded/stale` separat `UNIFI_BASE_URL`, TLS-Modus und `UNIFI_API_KEY` prüfen; nach Recovery aktualisiert sich der Snapshot mit dem nächsten Hintergrund-Check. `/healthz` bleibt unabhängig davon `200`. Dateiaudit-Fehler nutzen weiterhin den dokumentierten stdout-Fallback, statt den Dienst abzumelden.
 - **TLS-Modi:** `strict` verifiziert gegen `UNIFI_CA_BUNDLE` (Pflichtfeld, Server startet sonst nicht) — nur nutzen, wenn das Gateway-Zertifikat verifizierbar ist (z. B. internes CA-Bundle aus SOPS). `extract-once` (Default) für self-signed Gateway-Certs: ein unverifizierter Bootstrap-Handshake, Peer-Cert wird als Session-CA genutzt, SHA-256-Fingerprint prominent geloggt. `insecure` schaltet die Verifikation komplett ab: **nur für lokale Entwicklung**, mit prominentem Warnlog.
 - **Fingerprint-Warnung bei `extract-once`:** Beim Bootstrap-Handshake wird der SHA-256-Fingerprint des Gateway-Zertifikats geloggt. Einmal prüfen, dass der Fingerprint zum eigenen Gateway passt (z. B. gegen `certs/gateway.crt` aus der API-Discovery). Passt er nicht: möglicher MITM oder falsches Ziel — nicht ignorieren.
 - **429 / `rate_limited`:** Das Gateway drosselt die API. Der Fehler enthält `retry_after_seconds` — Aufrufhäufigkeit reduzieren (weniger parallele List-Calls, gezielt filtern statt breit ziehen).

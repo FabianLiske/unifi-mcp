@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # multiple instances of the same deployment apart.
     mcp_instance_label: str = "production"
 
+    # --- Informational upstream monitor (never a readiness gate) ---
+    upstream_check_interval_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    upstream_check_timeout_seconds: float = Field(default=3.0, gt=0, allow_inf_nan=False)
+
     # --- Logging ---
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "text"] = "json"

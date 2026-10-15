@@ -1234,20 +1234,36 @@ Kein UniFi-Aufruf.
 
 ## `/readyz`
 
-Prüft:
+Prüft ausschließlich lokale Betriebsbereitschaft:
 
-- Config geladen,
-- API-Client initialisiert,
-- optional kurzer Application-Info-Check mit kleinem Cache.
+- Config validiert/geladen,
+- HTTP-Client initialisiert und offen,
+- Audit-Logging initialisiert (Dateifehler nutzen weiterhin den stdout-Fallback),
+- MCP-App und Tool-Registrierung gebaut,
+- SDK-Lifespan gestartet, noch nicht im Shutdown.
 
-Nicht bei jedem Kubernetes-Probe-Aufruf das Gateway bombardieren.
+Keine Netzwerk- oder Dateizugriffe im Probe-Pfad. Bei lokalem Defekt 503,
+sonst 200 — auch wenn das Gateway langsam oder unerreichbar ist.
 
-Beispiel:
+Gateway-Erreichbarkeit wird separat durch einen Lifespan-Hintergrundtask
+abgebildet: ein retry-freier `/info`-GET je Zyklus, default 3 s Gesamtzeitlimit,
+danach default 30 s Pause; nie überlappende Prüfungen, Cancellation/Join beim
+Shutdown. Konfiguration: `UPSTREAM_CHECK_INTERVAL_SECONDS` und
+`UPSTREAM_CHECK_TIMEOUT_SECONDS` (endlich, > 0).
 
-- API-Erreichbarkeit maximal alle 30 Sekunden prüfen,
-- Ergebnis cachen.
+`/readyz` liefert zusätzlich einen unveränderlichen, rein informativen
+`upstream`-Snapshot mit `status`, `application_version`, `last_latency_ms`,
+`last_success_at`, `last_failure_at`, `last_error` (nur Exception-Klasse),
+`consecutive_failures` und `last_check_age_seconds` (vor erster Prüfung null).
+Zeitstempel sind monotone prozesslokale Sekunden, keine UTC-Werte.
+Status: `stale` bei fehlendem/veraltetem Ergebnis (> Intervall + Zeitlimit),
+`ok` bei Erfolg, `down` bei Fehler ohne vorigen Erfolg, `degraded` bei Fehler
+nach einem Erfolg. Niemals Gateway-Fehlertexte oder Credentials veröffentlichen.
 
-Wenn UniFi kurz weg ist, kann Readiness false werden; Liveness bleibt true.
+Ein Gateway-Ausfall darf allein weder Readiness noch Liveness auf false setzen.
+Read-Tools liefern weiterhin strukturierte Upstream-Fehler. Capability-Erkennung
+läuft lazy in den Read-Tools, nicht mehr blockierend vor dem ASGI-Start.
+TLS-Client-Erzeugung (inkl. extract-once-Bootstrap) bleibt davon unberührt.
 
 ---
 
