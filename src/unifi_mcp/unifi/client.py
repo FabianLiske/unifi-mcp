@@ -1,10 +1,22 @@
 """Async client for the official local UniFi Network API.
 
-Design rules (design doc section 7):
+Design rules (design doc §7, budget discipline §44):
 - exactly one reused ``httpx.AsyncClient`` (connection pooling)
-- explicit timeouts
-- retries only for transient failures (5xx, 429, connect/read errors, timeouts)
+- explicit, *configured* timeouts (connect / read / pool — a saturated
+  pool surfaces as a bounded error instead of a silent multi-minute stall)
+- retries only for transient failures, and only where safe (design §44):
+  * ``GET`` — retried on transient status (5xx/429) *and* on transport
+    errors, with exponential backoff + full jitter
+  * ``PUT`` — retried on transient *status* only (the gateway answered,
+    so the request provably did not execute); **never** on a transport
+    error, where the outcome is ambiguous (no blind write retries)
+  * ``POST`` — never retried (a doubled create is worse than a failure)
+- every retry is bounded by a per-attempt *and* a per-tool-call wall-clock
+  budget, so a single call always completes and reports before the
+  external MCP/LiteLLM client deadline (60 s) — no retry amplification
 - ``429`` respected via ``Retry-After``
+- bounded concurrency: at most ``unifi_max_concurrent_requests`` in-flight
+  gateway requests per client
 - UniFi errors mapped to typed exceptions
 - raw response size capped
 - never log the API key or Authorization material
@@ -14,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import ssl
 import time
 from collections.abc import Mapping
@@ -22,6 +35,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from unifi_mcp import budget as _budget
 from unifi_mcp.config import Settings
 from unifi_mcp.observability.logging import get_logger
 from unifi_mcp.observability.metrics import record_unifi_request
@@ -32,8 +46,10 @@ from unifi_mcp.unifi.errors import (
     UniFiConflictError,
     UniFiError,
     UniFiNotFoundError,
+    UniFiPoolTimeoutError,
     UniFiRateLimitError,
     UniFiResponseTooLargeError,
+    UniFiTransportTimeoutError,
     UniFiUnavailableError,
     UniFiValidationError,
 )
@@ -46,12 +62,13 @@ logger = get_logger(__name__)
 
 _API_BASE_PATH = "/proxy/network/integration/v1"
 _TRANSIENT_STATUS = frozenset({500, 502, 503, 504})
+#: Transport errors safe to retry for *reads* (the request almost certainly
+#: never reached the gateway). Writes never retry transport errors (F05).
 _RETRYABLE_TRANSPORT_ERRORS = (
     httpx.TimeoutException,
     httpx.NetworkError,
     httpx.RemoteProtocolError,
 )
-_MAX_BACKOFF_SECONDS = 8.0
 
 
 def _api_code(body: Any) -> str | None:
@@ -111,7 +128,17 @@ def _parse_retry_after(headers: httpx.Headers) -> float | None:
 
 
 def build_http_client(settings: Settings, verify: bool | ssl.SSLContext) -> httpx.AsyncClient:
-    """Build the single reused AsyncClient (pooling, timeouts, auth)."""
+    """Build the single reused AsyncClient (pooling, timeouts, auth).
+
+    All four timeout phases are configured: ``pool`` is its own, bounded
+    value (a saturated pool surfaces as a :class:`UniFiPoolTimeoutError`
+    after ``unifi_pool_timeout_seconds`` instead of a silent multi-minute
+    stall). Pool size is derived from the bounded concurrency so
+    ``max_connections`` can never be smaller than the in-flight requests the
+    client allows (which would force every extra request to block on the
+    pool and turn a burst into a wall of pool timeouts).
+    """
+    max_concurrent = settings.unifi_max_concurrent_requests
     return httpx.AsyncClient(
         base_url=settings.unifi_base_url + _API_BASE_PATH,
         headers={"X-API-Key": settings.unifi_api_key.get_secret_value()},
@@ -119,9 +146,12 @@ def build_http_client(settings: Settings, verify: bool | ssl.SSLContext) -> http
             connect=settings.unifi_connect_timeout_seconds,
             read=settings.unifi_timeout_seconds,
             write=settings.unifi_timeout_seconds,
-            pool=settings.unifi_connect_timeout_seconds,
+            pool=settings.unifi_pool_timeout_seconds,
         ),
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        limits=httpx.Limits(
+            max_connections=2 * max_concurrent,
+            max_keepalive_connections=max_concurrent,
+        ),
         verify=verify,
     )
 
@@ -135,11 +165,17 @@ class UniFiClient:
         http: httpx.AsyncClient,
         *,
         backoff_base: float = 0.5,
+        backoff_cap: float = 2.0,
     ) -> None:
         self._settings = settings
         self._http = http
         self._backoff_base = backoff_base
+        self._backoff_cap = backoff_cap
         self._capability_cache: CapabilityCache | None = None
+        # Bounded concurrency: at most N in-flight gateway requests, so a
+        # single tool call (or a burst of concurrent calls) cannot saturate
+        # the pool and amplify a degraded gateway (F01/F05).
+        self._concurrency = asyncio.Semaphore(settings.unifi_max_concurrent_requests)
 
     @classmethod
     async def create(cls, settings: Settings) -> UniFiClient:
@@ -175,11 +211,29 @@ class UniFiClient:
             ca_bundle=str(settings.unifi_ca_bundle) if settings.unifi_ca_bundle else None,
             extracted_pem=extracted_pem,
         )
-        return cls(settings, build_http_client(settings, verify))
+        return cls(
+            settings,
+            build_http_client(settings, verify),
+            backoff_base=settings.unifi_retry_backoff_base_seconds,
+            backoff_cap=settings.unifi_retry_backoff_cap_seconds,
+        )
 
     @property
     def site_id(self) -> str | None:
         return self._settings.unifi_site_id
+
+    @property
+    def attempt_headroom(self) -> float:
+        """Worst-case wall-clock of one gateway request *attempt*.
+
+        ``connect + read + pool``: the budget guard refuses an attempt whose
+        worst case cannot finish inside the current tool-call budget (design
+        §44), so a request never runs past the external deadline.
+        """
+        s = self._settings
+        return (
+            s.unifi_connect_timeout_seconds + s.unifi_timeout_seconds + s.unifi_pool_timeout_seconds
+        )
 
     @property
     def capability_cache(self) -> CapabilityCache:
@@ -210,9 +264,16 @@ class UniFiClient:
     async def put(self, path: str, *, json: Any = None) -> Any:
         """Issue a PUT with an optional JSON body (full-replace semantics).
 
-        The UniFi v1 update endpoints are PUTs that expect the *complete*
-        object. PUT is idempotent, so the standard transient-failure retry
-        policy applies.
+        Retry policy (design §44):
+
+        - a transient *status* response (5xx/429) is retried: the gateway
+          answered, so the request provably did not execute and retrying is
+          safe;
+        - a *transport* failure (timeout, connection error) is **never**
+          retried here: the request may have executed server-side and timed
+          out on the response, so the outcome is ambiguous. The write layer
+          (:mod:`unifi_mcp.tools.writes`) re-reads the object to resolve the
+          outcome instead of blindly re-issuing the write.
         """
         return await self._request("PUT", path, json_body=json)
 
@@ -242,8 +303,91 @@ class UniFiClient:
         return ApplicationInfo.model_validate(cast(Mapping[str, Any], data))
 
     def _backoff(self, attempt: int) -> float:
-        delay = self._backoff_base * 2.0 ** (attempt - 1)
-        return min(delay, _MAX_BACKOFF_SECONDS)
+        """Exponential backoff with *full jitter*.
+
+        ``delay = uniform(0, min(base * 2**(attempt-1), cap))``. Full jitter
+        decorrelates concurrent clients and bursts so they do not retry on the
+        same tick (retry amplification against a degraded gateway).
+        """
+        ceiling = min(self._backoff_base * 2.0 ** (attempt - 1), self._backoff_cap)
+        return random.uniform(0.0, ceiling)
+
+    def _should_retry_status(
+        self, method: str, retry: bool, transient: bool, attempt: int, max_attempts: int
+    ) -> bool:
+        """Whether a transient *status* response is retried.
+
+        Retried for GET and PUT (the gateway answered, so the write provably
+        did not execute and retrying is safe); never for POST (``retry`` is
+        already ``False``) or a non-transient 4xx.
+        """
+        return transient and retry and method in ("GET", "PUT") and attempt < max_attempts
+
+    def _retry_delay_pool(
+        self,
+        method: str,
+        retry: bool,
+        attempt: int,
+        max_attempts: int,
+        started: float,
+        endpoint_group: str,
+        exc: httpx.PoolTimeout,
+    ) -> float:
+        """Pool-saturation handler: return the backoff delay to wait before a
+        retry (reads), or raise the bounded structured error (writes)."""
+        duration = time.monotonic() - started
+        record_unifi_request(method, "pool_timeout", duration, endpoint_group)
+        if method == "GET" and retry and attempt < max_attempts:
+            delay = self._backoff(attempt)
+            logger.info(
+                "unifi request retrying after pool timeout",
+                method=method,
+                attempt=attempt,
+                delay_seconds=delay,
+            )
+            return delay
+        msg = (
+            "UniFi API connection pool saturated "
+            f"({self._settings.unifi_pool_timeout_seconds:.0f}s wait); "
+            "too many in-flight requests"
+        )
+        raise UniFiPoolTimeoutError(msg) from exc
+
+    def _retry_delay_transport(
+        self,
+        method: str,
+        retry: bool,
+        attempt: int,
+        max_attempts: int,
+        started: float,
+        endpoint_group: str,
+        exc: BaseException,
+    ) -> float:
+        """Transport-error handler: return the backoff delay to wait before a
+        retry (reads), or raise. A *mutating* transport failure is surfaced as
+        :class:`UniFiTransportTimeoutError` (the request may have executed —
+        the write layer re-reads to resolve it, never a blind retry); any
+        other non-read is :class:`UniFiUnavailableError`."""
+        duration = time.monotonic() - started
+        record_unifi_request(method, "error", duration, endpoint_group)
+        if method == "GET" and retry and attempt < max_attempts:
+            delay = self._backoff(attempt)
+            logger.info(
+                "unifi request retrying after transport error",
+                method=method,
+                error=exc.__class__.__name__,
+                attempt=attempt,
+                delay_seconds=delay,
+            )
+            return delay
+        if method in ("PUT", "POST"):
+            raise UniFiTransportTimeoutError(
+                f"UniFi write failed in the transport layer and may "
+                f"have executed: {exc.__class__.__name__} ({exc})",
+            ) from exc
+        raise UniFiUnavailableError(
+            f"UniFi API unreachable: {exc.__class__.__name__} ({exc})",
+        ) from exc
 
     async def _read_body_with_cap(self, response: httpx.Response, cap: int) -> bytes:
         content_length = response.headers.get("content-length")
@@ -276,16 +420,32 @@ class UniFiClient:
         json_body: Any = None,
         retry: bool = True,
     ) -> Any:
+        """Issue one gateway request with the budgeted retry policy (design §44).
+
+        - ``retry`` (status retries) is off for POST; transport-error retries
+          are *additionally* off for PUT/POST (the outcome of a write that
+          timed out in the transport is ambiguous — resolved by re-reading,
+          never by a blind re-issue).
+        - every attempt first passes the per-tool-call budget guard
+          (:func:`unifi_mcp.budget.ensure_budget`), and every backoff honors
+          the budget (:func:`unifi_mcp.budget.wait_backoff`).
+        - in-flight requests are bounded by the concurrency semaphore.
+        """
         settings = self._settings
         max_attempts = 1 + settings.unifi_max_retries if retry else 1
         endpoint_group = path.lstrip("/").split("/", 1)[0] or "root"
+        headroom = self.attempt_headroom
         for attempt in range(1, max_attempts + 1):
+            await _budget.ensure_budget(headroom)
             started = time.monotonic()
             response: httpx.Response | None = None
             try:
-                request = self._http.build_request(method, path, params=params, json=json_body)
-                response = await self._http.send(request, stream=True)
-                body = await self._read_body_with_cap(response, settings.max_tool_response_bytes)
+                async with self._concurrency:
+                    request = self._http.build_request(method, path, params=params, json=json_body)
+                    response = await self._http.send(request, stream=True)
+                    body = await self._read_body_with_cap(
+                        response, settings.max_tool_response_bytes
+                    )
                 status = response.status_code
                 retry_after = _parse_retry_after(response.headers)
                 duration = time.monotonic() - started
@@ -308,7 +468,10 @@ class UniFiClient:
                     error.retry_after = retry_after
                 record_unifi_request(method, str(status), duration, endpoint_group)
                 transient = status == 429 or status in _TRANSIENT_STATUS
-                if transient and attempt < max_attempts:
+                # A transient *status* is retried for GET and PUT (the gateway
+                # answered, so the write provably did not execute); never for
+                # POST or a non-transient 4xx.
+                if self._should_retry_status(method, retry, transient, attempt, max_attempts):
                     delay = retry_after if retry_after is not None else self._backoff(attempt)
                     logger.info(
                         "unifi request retrying",
@@ -318,27 +481,26 @@ class UniFiClient:
                         attempt=attempt,
                         delay_seconds=delay,
                     )
-                    await asyncio.sleep(delay)
+                    await _budget.wait_backoff(delay)
                     continue
                 raise error
+            except httpx.PoolTimeout as exc:
+                # Pool saturation (bounded wait): retried for reads only,
+                # surfaced as a structured error otherwise (see the helper).
+                delay = self._retry_delay_pool(
+                    method, retry, attempt, max_attempts, started, endpoint_group, exc
+                )
+                await _budget.wait_backoff(delay)
+                continue
             except _RETRYABLE_TRANSPORT_ERRORS as exc:
-                duration = time.monotonic() - started
-                record_unifi_request(method, "error", duration, endpoint_group)
-                if attempt < max_attempts:
-                    delay = self._backoff(attempt)
-                    logger.info(
-                        "unifi request retrying after transport error",
-                        method=method,
-                        path=path,
-                        error=exc.__class__.__name__,
-                        attempt=attempt,
-                        delay_seconds=delay,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                raise UniFiUnavailableError(
-                    f"UniFi API unreachable: {exc.__class__.__name__} ({exc})",
-                ) from exc
+                # Transport errors are retried for *reads* only; a *mutating*
+                # failure is surfaced for the write layer to resolve (the
+                # helper), never a blind retry (design §44).
+                delay = self._retry_delay_transport(
+                    method, retry, attempt, max_attempts, started, endpoint_group, exc
+                )
+                await _budget.wait_backoff(delay)
+                continue
             finally:
                 if response is not None:
                     await response.aclose()

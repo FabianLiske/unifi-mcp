@@ -140,14 +140,24 @@ def register_dns_tools(server: MCPServer, client: UniFiClient, settings: Setting
         return with_state_hash(cast("dict[str, Any]", normalize(data, level="detail")))
 
     server.add_tool(
-        wrap_tool("list_dns_policies", settings.max_tool_response_bytes, list_dns_policies),
+        wrap_tool(
+            "list_dns_policies",
+            settings.max_tool_response_bytes,
+            list_dns_policies,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_dns_policies",
         title="List DNS Policies",
         description=DESCRIPTION_LIST,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_dns_policy", settings.max_tool_response_bytes, get_dns_policy),
+        wrap_tool(
+            "get_dns_policy",
+            settings.max_tool_response_bytes,
+            get_dns_policy,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_dns_policy",
         title="Get DNS Policy",
         description=DESCRIPTION_GET,

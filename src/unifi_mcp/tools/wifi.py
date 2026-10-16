@@ -87,14 +87,24 @@ def register_wifi_tools(server: MCPServer, client: UniFiClient, settings: Settin
         return with_state_hash(normalize(data, level="detail"))
 
     server.add_tool(
-        wrap_tool("list_wifi", settings.max_tool_response_bytes, list_wifi),
+        wrap_tool(
+            "list_wifi",
+            settings.max_tool_response_bytes,
+            list_wifi,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_wifi",
         title="List WiFi",
         description=LIST_WIFI_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_wifi", settings.max_tool_response_bytes, get_wifi),
+        wrap_tool(
+            "get_wifi",
+            settings.max_tool_response_bytes,
+            get_wifi,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_wifi",
         title="Get WiFi",
         description=GET_WIFI_DESCRIPTION,
@@ -150,7 +160,13 @@ def register_wifi_write_tools(server: MCPServer, client: UniFiClient, settings: 
             raise NotFoundError(resource="wifi_broadcast", query=broadcast_id) from None
 
     server.add_tool(
-        wrap_tool("update_wifi", settings.max_tool_response_bytes, update_wifi, write=True),
+        wrap_tool(
+            "update_wifi",
+            settings.max_tool_response_bytes,
+            update_wifi,
+            write=True,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="update_wifi",
         title="Update WiFi",
         description=UPDATE_WIFI_DESCRIPTION,

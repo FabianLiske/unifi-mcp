@@ -116,7 +116,10 @@ def register_reference_tools(server: MCPServer, client: UniFiClient, settings: S
 
     server.add_tool(
         wrap_tool(
-            "list_reference_resources", settings.max_tool_response_bytes, list_reference_resources
+            "list_reference_resources",
+            settings.max_tool_response_bytes,
+            list_reference_resources,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="list_reference_resources",
         title="List Reference Resources",

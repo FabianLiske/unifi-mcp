@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
-from unifi_mcp.unifi.capabilities import detect_capabilities
-from unifi_mcp.unifi.errors import UniFiError
+from unifi_mcp.unifi.capabilities import CapabilityCache, detect_capabilities
+from unifi_mcp.unifi.errors import UniFiError, UniFiUnavailableError
 
 BASE = "http://gateway.test/proxy/network/integration/v1"
 SITE = "site-abc"
@@ -177,3 +179,60 @@ async def test_core_failure_raises(respx_mock, make_client, make_settings) -> No
     client = await make_client(make_settings(unifi_max_retries=0))
     with pytest.raises(UniFiError):
         await detect_capabilities(client)
+
+
+# ---------------------------------------------------------------------------
+# CapabilityCache single-flight (design §44, F05)
+# ---------------------------------------------------------------------------
+
+
+async def test_capability_cache_single_flight_on_concurrent_miss(make_client, monkeypatch) -> None:
+    """Concurrent callers that miss an empty cache together must share a
+    single re-detection (design §44, F05) — not each fire the eleven-request
+    probe, which against a degraded gateway is the request amplification F05
+    exists to remove."""
+    client = await make_client()
+    calls = 0
+    first_result = object()
+
+    async def fake_detect(_client):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.05)  # the probe takes real time
+        return first_result
+
+    monkeypatch.setattr("unifi_mcp.unifi.capabilities.detect_capabilities", fake_detect)
+    cache = CapabilityCache(client, ttl_seconds=60.0)
+    results = await asyncio.gather(*(cache.get() for _ in range(8)))
+    assert calls == 1  # 8 concurrent misses -> exactly 1 probe
+    assert all(r is first_result for r in results)
+
+    # A later call (within the TTL) is served from the cache: no new probe.
+    assert await cache.get() is first_result
+    assert calls == 1
+
+
+async def test_capability_cache_failed_rediscover_not_cached(
+    respx_mock, make_client, monkeypatch
+) -> None:
+    """A failed re-detection is not cached: it raises to the caller and the
+    next caller retries the probe (no negative caching)."""
+    client = await make_client()
+    calls = 0
+    ok_result = object()
+
+    async def flaky_detect(_client):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise UniFiUnavailableError("gateway saturated")
+        return ok_result
+
+    monkeypatch.setattr("unifi_mcp.unifi.capabilities.detect_capabilities", flaky_detect)
+    cache = CapabilityCache(client, ttl_seconds=60.0)
+    with pytest.raises(UniFiUnavailableError):
+        await cache.get()
+    assert calls == 1
+    # Not cached: the next call retries the probe and succeeds.
+    assert await cache.get() is ok_result
+    assert calls == 2

@@ -98,6 +98,40 @@ class ResponseTooLargeError(ToolError):
         super().__init__(message or "Narrow the query or use pagination.")
 
 
+class AmbiguousWriteOutcomeError(ToolError):
+    """A write's transport outcome is unknown and could not be resolved (design §44).
+
+    Raised when a mutating request (PUT) fails in the transport layer (a
+    timeout / connection error), where the request *may have executed*
+    server-side. The write layer re-reads the object to resolve the outcome;
+    when the re-read shows the object no longer matches the caller's
+    ``expected_state_hash`` — i.e. it cannot be proven that *this* write is
+    the change — the call reports this instead of blindly re-issuing the
+    write. It carries the current ``state_hash`` so the caller can re-read and
+    decide, never a guessed success.
+    """
+
+    code = "write_outcome_unknown"
+
+    def __init__(
+        self,
+        *,
+        resource: str,
+        current_state_hash: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        default = (
+            f"The {resource} update could not be confirmed: the request "
+            "timed out and the object no longer matches the state you read. "
+            "Re-read the object for its current state before deciding whether "
+            "to retry."
+        )
+        fields: dict[str, Any] = {"resource": resource}
+        if current_state_hash is not None:
+            fields["current_state_hash"] = current_state_hash
+        super().__init__(message or default, **fields)
+
+
 def check_response_size(payload: Any, *, max_bytes: int) -> int:
     """Raise :class:`ResponseTooLargeError` if the JSON size exceeds *max_bytes*.
 

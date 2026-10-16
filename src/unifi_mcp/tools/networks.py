@@ -73,14 +73,24 @@ def register_network_tools(server: MCPServer, client: UniFiClient, settings: Set
         return with_state_hash(normalize(data, level="detail"))
 
     server.add_tool(
-        wrap_tool("list_networks", settings.max_tool_response_bytes, list_networks),
+        wrap_tool(
+            "list_networks",
+            settings.max_tool_response_bytes,
+            list_networks,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_networks",
         title="List Networks",
         description=LIST_NETWORKS_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_network", settings.max_tool_response_bytes, get_network),
+        wrap_tool(
+            "get_network",
+            settings.max_tool_response_bytes,
+            get_network,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_network",
         title="Get Network",
         description=GET_NETWORK_DESCRIPTION,

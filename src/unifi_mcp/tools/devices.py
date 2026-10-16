@@ -197,14 +197,24 @@ def register_device_tools(server: MCPServer, client: UniFiClient, settings: Sett
         return await fetch_list(client, "/pending-devices", params=params)
 
     server.add_tool(
-        wrap_tool("list_devices", settings.max_tool_response_bytes, list_devices),
+        wrap_tool(
+            "list_devices",
+            settings.max_tool_response_bytes,
+            list_devices,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_devices",
         title="List Devices",
         description=DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_device", settings.max_tool_response_bytes, get_device),
+        wrap_tool(
+            "get_device",
+            settings.max_tool_response_bytes,
+            get_device,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_device",
         title="Get Device",
         description=GET_DEVICE_DESCRIPTION,
@@ -215,6 +225,7 @@ def register_device_tools(server: MCPServer, client: UniFiClient, settings: Sett
             "get_device_statistics",
             settings.max_tool_response_bytes,
             get_device_statistics,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="get_device_statistics",
         title="Get Device Statistics",
@@ -226,6 +237,7 @@ def register_device_tools(server: MCPServer, client: UniFiClient, settings: Sett
             "list_pending_devices",
             settings.max_tool_response_bytes,
             list_pending_devices,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="list_pending_devices",
         title="List Pending Devices",

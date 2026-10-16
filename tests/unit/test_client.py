@@ -46,7 +46,10 @@ async def test_timeouts_explicit(respx_mock, make_client) -> None:
     assert timeout.connect == 1.0
     assert timeout.read == 5.0
     assert timeout.write == 5.0
-    assert timeout.pool == 1.0
+    # pool timeout is its own bounded setting (unifi_pool_timeout_seconds,
+    # default 5 s) so a saturated pool surfaces as a bounded error instead of
+    # silently inheriting the connect timeout (design §44).
+    assert timeout.pool == 5.0
 
 
 async def test_get_list_parses_envelope(respx_mock, make_client) -> None:

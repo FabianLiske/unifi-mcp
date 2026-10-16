@@ -9,6 +9,7 @@ their status, so tools can answer ``unsupported`` instead of a raw HTTP 400.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -162,6 +163,15 @@ class CapabilityCache:
     re-detected. A failed re-detection still raises — callers (tools) map
     that to a structured error, and the server is expected to be healthy
     when a core ``/info`` call succeeds.
+
+    Re-detection is *single-flight* (design §44, F05): the probe is not
+    cheap (up to eleven sequential gateway requests), so concurrent callers
+    that observe an expired (or never populated) cache at the same time must
+    not each fire their own probe — against a degraded gateway that is
+    exactly the request amplification F05 exists to remove. The first caller
+    runs the probe under a lock; concurrent callers wait and then reuse its
+    result. A *failed* re-detection is not cached: it raises to every waiter
+    and the next caller retries the probe.
     """
 
     def __init__(
@@ -176,13 +186,25 @@ class CapabilityCache:
         self._clock = clock
         self._cached: Capabilities | None = None
         self._checked_at: float = -1.0
+        self._detect_lock = asyncio.Lock()
 
     async def get(self) -> Capabilities:
-        """Return the cached capabilities, re-detecting after the TTL."""
+        """Return the cached capabilities, re-detecting after the TTL.
+
+        Concurrent callers that miss the cache together share a single
+        re-detection (single-flight, design §44) — see the class docstring.
+        """
         now = self._clock()
         if self._cached is not None and (now - self._checked_at) < self._ttl:
             return self._cached
-        cached = await detect_capabilities(self._client)
-        self._cached = cached
-        self._checked_at = now
-        return cached
+        async with self._detect_lock:
+            # Re-check under the lock: a concurrent caller may have completed
+            # the re-detection while we were waiting for it (the fast path
+            # above ran before the lock was released).
+            now = self._clock()
+            if self._cached is not None and (now - self._checked_at) < self._ttl:
+                return self._cached
+            cached = await detect_capabilities(self._client)
+            self._cached = cached
+            self._checked_at = self._clock()
+            return cached

@@ -27,7 +27,12 @@ def test_defaults(clean_env) -> None:
     assert s.unifi_ca_bundle is None
     assert s.unifi_timeout_seconds == 15.0
     assert s.unifi_connect_timeout_seconds == 5.0
-    assert s.unifi_max_retries == 2
+    assert s.unifi_pool_timeout_seconds == 5.0
+    assert s.unifi_max_retries == 1
+    assert s.unifi_retry_backoff_base_seconds == 0.5
+    assert s.unifi_retry_backoff_cap_seconds == 2.0
+    assert s.unifi_max_concurrent_requests == 8
+    assert s.unifi_tool_call_budget_seconds == 45.0
     assert s.mcp_auth_token.get_secret_value() == "test-token"
     assert s.mcp_bind_host == "0.0.0.0"
     assert s.mcp_bind_port == 8000
