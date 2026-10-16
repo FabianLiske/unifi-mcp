@@ -1,0 +1,8 @@
+{
+  "orderedAclRuleIds": [
+    "acl-rule-allow-0",
+    "acl-rule-block-1",
+    "acl-rule-allow-2",
+    "acl-rule-block-3"
+  ]
+}
