@@ -11,8 +11,8 @@ trivially horizontally scalable and restart-friendly.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
+from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _package_version
 from typing import TYPE_CHECKING, Any
@@ -63,43 +63,26 @@ def _server_instructions(label: str) -> str:
 
 
 class ReadinessProbe:
-    """Caches the UniFi application-info check for ``/readyz``.
+    """Purely local readiness: lifecycle complete and HTTP client usable.
 
-    The gateway is queried at most once per TTL (design §26: at most every 30
-    seconds) so Kubernetes probes do not hammer it. If UniFi is briefly
-    unreachable, readiness can be ``false`` while liveness stays ``true``.
+    Config validation, audit initialization (including stdout fallback), and
+    tool registration complete before the lifespan marks this ready.
     """
 
-    def __init__(
-        self,
-        client: UniFiClient,
-        *,
-        ttl_seconds: float = 30.0,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self._client = client
-        self._ttl = ttl_seconds
-        self._clock = clock
-        self._last_check: float = -1.0
-        self._ready: bool = False
-        self._detail = "not checked yet"
+    def __init__(self, client_open: Callable[[], bool]) -> None:
+        self._client_open = client_open
+        self.started = False
 
     async def check(self) -> tuple[bool, str]:
-        """Return ``(ready, detail)``, using the cached result within the TTL."""
-        now = self._clock()
-        if self._last_check >= 0 and (now - self._last_check) < self._ttl:
-            return self._ready, self._detail
+        """Never perform network or filesystem I/O on the probe path."""
+        if not self.started:
+            return False, "local application not started or shutting down"
         try:
-            info = await self._client.get_application_info()
-            ready = True
-            detail = f"unifi applicationVersion={info.application_version}"
-        except Exception as exc:  # noqa: BLE001 - readiness must never raise
-            ready = False
-            detail = f"unifi check failed: {type(exc).__name__}"
-        self._last_check = now
-        self._ready = ready
-        self._detail = detail
-        return ready, detail
+            if not self._client_open():
+                return False, "local HTTP client closed"
+        except Exception:  # noqa: BLE001 - local defects must return 503, not 500
+            return False, "local HTTP client unavailable"
+        return True, "local application ready"
 
 
 def build_server(
@@ -135,6 +118,7 @@ def build_server(
             "status": "ready" if ready else "not_ready",
             "detail": detail,
         }
+        payload["upstream"] = asdict(request.app.state.upstream_monitor.snapshot())
         return JSONResponse(payload, status_code=200 if ready else 503)
 
     register_tools(server, client, settings, groups=groups)

@@ -155,7 +155,9 @@ async def test_readyz_public_and_ready(mcp_app) -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ready"
-        assert "10.6.101" in body["detail"]
+        assert body["detail"] == "local application ready"
+        assert body["upstream"]["status"] in {"ok", "stale"}
+        assert "last_check_age_seconds" in body["upstream"]
 
 
 # --- design §37: outputSchema (point 5) -------------------------------------
