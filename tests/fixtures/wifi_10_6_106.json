@@ -1,0 +1,44 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "enabled": true,
+      "id": "obj-live-1",
+      "metadata": {
+        "origin": "USER_DEFINED"
+      },
+      "name": "e03-sanitized-name",
+      "network": {
+        "networkId": "net-live-1",
+        "type": "SPECIFIC"
+      },
+      "securityConfiguration": {
+        "type": "WPA2_PERSONAL"
+      },
+      "type": "IOT_OPTIMIZED"
+    },
+    {
+      "broadcastingFrequenciesGHz": [
+        5,
+        2.4
+      ],
+      "enabled": true,
+      "id": "obj-live-2",
+      "metadata": {
+        "origin": "USER_DEFINED"
+      },
+      "name": "e03-sanitized-name",
+      "network": {
+        "networkId": "net-live-2",
+        "type": "SPECIFIC"
+      },
+      "securityConfiguration": {
+        "type": "WPA2_WPA3_PERSONAL"
+      },
+      "type": "STANDARD"
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

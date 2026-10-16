@@ -1,0 +1,23 @@
+{
+  "action": "BLOCK",
+  "destinationFilter": {
+    "networkIds": [
+      "net-live-3"
+    ],
+    "type": "NETWORKS"
+  },
+  "enabled": true,
+  "id": "acl-rule-block-1",
+  "index": 1,
+  "metadata": {
+    "origin": "USER_DEFINED"
+  },
+  "name": "e03-sanitized-name",
+  "sourceFilter": {
+    "networkIds": [
+      "net-live-2"
+    ],
+    "type": "NETWORKS"
+  },
+  "type": "IPV4"
+}

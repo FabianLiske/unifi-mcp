@@ -1,0 +1,23 @@
+{
+  "channel2gLockedTo6": false,
+  "clientIsolationEnabled": false,
+  "dtimPeriod2gLockedTo3": false,
+  "enabled": true,
+  "hideName": false,
+  "id": "bc-live-a",
+  "metadata": {
+    "origin": "USER_DEFINED"
+  },
+  "multicastToUnicastConversionEnabled": false,
+  "name": "e03-sanitized-name",
+  "network": {
+    "networkId": "net-live-1",
+    "type": "SPECIFIC"
+  },
+  "securityConfiguration": {
+    "passphrase": "e03-dummy-psk-12345678",
+    "type": "WPA2_PERSONAL"
+  },
+  "type": "IOT_OPTIMIZED",
+  "uapsdEnabled": false
+}

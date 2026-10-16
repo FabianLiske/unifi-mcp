@@ -1,0 +1,38 @@
+{
+  "advertiseDeviceName": false,
+  "arpProxyEnabled": false,
+  "bandSteeringEnabled": true,
+  "broadcastingFrequenciesGHz": [
+    5,
+    2.4
+  ],
+  "bssTransitionEnabled": true,
+  "channel2gLockedTo6": false,
+  "clientIsolationEnabled": false,
+  "dtimPeriod2gLockedTo3": false,
+  "enabled": true,
+  "hideName": false,
+  "id": "bc-live-b",
+  "metadata": {
+    "origin": "USER_DEFINED"
+  },
+  "multicastToUnicastConversionEnabled": false,
+  "name": "e03-sanitized-name",
+  "network": {
+    "networkId": "net-live-2",
+    "type": "SPECIFIC"
+  },
+  "securityConfiguration": {
+    "fastRoamingEnabled": false,
+    "passphrase": "e03-dummy-psk-12345678",
+    "pmfMode": "OPTIONAL",
+    "saeConfiguration": {
+      "anticloggingThresholdSeconds": 5,
+      "syncTimeSeconds": 5
+    },
+    "type": "WPA2_WPA3_PERSONAL",
+    "wpa3FastRoamingEnabled": false
+  },
+  "type": "STANDARD",
+  "uapsdEnabled": false
+}

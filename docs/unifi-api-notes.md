@@ -446,3 +446,53 @@ Versuche).
   `metadata.origin`-Werte der live WiFi-Broadcasts und ACL-Regeln
   (Guard verlangt exakt `USER_DEFINED`, fail-closed), (3) erster Live-PUT
   (geplanter Smoke-Test: ACL-Regel `enabled` toggle + Restore).
+  → **(1) und (2) erledigt in 11b (E03, 2026-10-16); (3) bleibt ausstehend.**
+
+### 11b. WP-15: Live-Verifikation der Write-Verträge (E03, 2026-10-16, 10.6.106)
+
+Read-only-Live-Capture (14 sequenzielle GETs, ~7 s, Gateway gesund) gegen
+das UCG (Base-URL im SOPS-Secret); sanitierte Fixtures in
+`tests/fixtures/*_10_6_106_*.json` (IDs/UUIDs zu Fake-IDs, Namen generisch,
+IPs zu TEST-NET-1, PSK zu Dummy; Enum-, Booles- und Key-Struktur
+unverändert), Tests: `tests/integration/test_wp15_live_shapes_e2e.py`.
+
+- **WiFi-Broadcasts (2, beide `metadata.origin = USER_DEFINED`):**
+  - `WPA2_PERSONAL` (IOT_OPTIMIZED): Detail-Keys = `channel2gLockedTo6,
+    clientIsolationEnabled, dtimPeriod2gLockedTo3, enabled, hideName, id,
+    metadata, multicastToUnicastConversionEnabled, name,
+    network{type,networkId}, securityConfiguration{type,passphrase}, type,
+    uapsdEnabled`.
+  - `WPA2_WPA3_PERSONAL` (STANDARD): zusätzlich `advertiseDeviceName,
+    arpProxyEnabled, bandSteeringEnabled, bssTransitionEnabled,
+    broadcastingFrequenciesGHz`, und `securityConfiguration` trägt
+    `fastRoamingEnabled, pmfMode (live: OPTIONAL),
+    saeConfiguration{anticloggingThresholdSeconds, syncTimeSeconds},
+    wpa3FastRoamingEnabled` neben `passphrase`/`type`.
+  - List-Items: `enabled, id, metadata{origin}, name,
+    network{type,networkId}, securityConfiguration{type}` (+ optional
+    `broadcastingFrequenciesGHz`) — **kein PSK in der Liste** (bestätigt).
+  - Die Full-Replace-Body aus dem rohen Detail-Objekt (minus
+    `id`/`metadata`) enthalten also exakt die DTO-required-Felder und alle
+    10.6.106-spezifischen WPA3-Felder — DTO-konform; die PSK wird nur im
+    Prozess geroundtript, nie an das LLM ausgegeben.
+- **ACL-Regeln (4, alle `metadata.origin = USER_DEFINED`):** Shape
+  `action, destinationFilter, enabled, id, index, metadata{origin}, name,
+  sourceFilter, type (IPV4)` — List- und Detail-Shape identisch.
+  `metadata` enthält live **nur** `origin` (kein `configurable` bei
+  WiFi/ACL, anders als bei Networks/Zones). Endpoint-Filter live:
+  `NETWORKS` (`networkIds[]`) und `IP_ADDRESSES_OR_SUBNETS`
+  (`ipAddressesOrSubnets[]`, live bis zu 9 Einträge); kein
+  `description`-Schlüssel (im Gegensatz zu 10.4-Ära-Fixtures; der PUT-Body
+  führt das DTO-optionale Feld also erst via Merge ein). `GET
+  /acl-rules/ordering` liefert `orderedAclRuleIds[]` (4 UUIDs).
+- **`metadata.origin`-Evidenz (fail-closed-Basis):** Details von WiFi und
+  ACL liefern exakt `{"origin": "USER_DEFINED"}`. Auf anderen Read-
+  Oberflächen liefert das Gateway **zusätzlich** `SYSTEM_DEFINED`
+  (Firewall-Zonen 13, Networks 14 — je Mix aus beidem) und bei
+  Traffic-Matching-Lists (9) gar kein `metadata` — der Guard muss also
+  genau die live vorkommenden Abweichungen (`SYSTEM_DEFINED`, fehlendes
+  `metadata`) ablehnen; getestet in `test_wp15_live_shapes_e2e.py`
+  (fail-closed-Matrix + end-to-end ohne PUT).
+- **Erster Live-PUT:** bewusst nicht ausgeführt (read-only-Mandat). Der
+  geplante Smoke-Test (ACL-`enabled` toggle + Restore) bleibt ein
+  bewusster Follow-up nach expliziter Freigabe.

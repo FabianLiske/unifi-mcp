@@ -1,0 +1,31 @@
+{
+  "action": "ALLOW",
+  "destinationFilter": {
+    "networkIds": [
+      "net-live-3"
+    ],
+    "type": "NETWORKS"
+  },
+  "enabled": true,
+  "id": "acl-rule-allow-0",
+  "index": 0,
+  "metadata": {
+    "origin": "USER_DEFINED"
+  },
+  "name": "e03-sanitized-name",
+  "sourceFilter": {
+    "ipAddressesOrSubnets": [
+      "192.0.2.1",
+      "192.0.2.2",
+      "192.0.2.3",
+      "192.0.2.4",
+      "192.0.2.5",
+      "192.0.2.6",
+      "192.0.2.7",
+      "192.0.2.8",
+      "192.0.2.9"
+    ],
+    "type": "IP_ADDRESSES_OR_SUBNETS"
+  },
+  "type": "IPV4"
+}
