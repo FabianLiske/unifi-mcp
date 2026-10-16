@@ -238,14 +238,24 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
         }
 
     server.add_tool(
-        wrap_tool("list_firewall_zones", settings.max_tool_response_bytes, list_firewall_zones),
+        wrap_tool(
+            "list_firewall_zones",
+            settings.max_tool_response_bytes,
+            list_firewall_zones,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_firewall_zones",
         title="List Firewall Zones",
         description=LIST_FIREWALL_ZONES_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_firewall_zone", settings.max_tool_response_bytes, get_firewall_zone),
+        wrap_tool(
+            "get_firewall_zone",
+            settings.max_tool_response_bytes,
+            get_firewall_zone,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_firewall_zone",
         title="Get Firewall Zone",
         description=GET_FIREWALL_ZONE_DESCRIPTION,
@@ -253,7 +263,10 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
     )
     server.add_tool(
         wrap_tool(
-            "list_firewall_policies", settings.max_tool_response_bytes, list_firewall_policies
+            "list_firewall_policies",
+            settings.max_tool_response_bytes,
+            list_firewall_policies,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="list_firewall_policies",
         title="List Firewall Policies",
@@ -261,7 +274,12 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_firewall_policy", settings.max_tool_response_bytes, get_firewall_policy),
+        wrap_tool(
+            "get_firewall_policy",
+            settings.max_tool_response_bytes,
+            get_firewall_policy,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_firewall_policy",
         title="Get Firewall Policy",
         description=GET_FIREWALL_POLICY_DESCRIPTION,
@@ -272,6 +290,7 @@ def register_firewall_tools(server: MCPServer, client: UniFiClient, settings: Se
             "get_firewall_policy_ordering",
             settings.max_tool_response_bytes,
             get_firewall_policy_ordering,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="get_firewall_policy_ordering",
         title="Get Firewall Policy Ordering",

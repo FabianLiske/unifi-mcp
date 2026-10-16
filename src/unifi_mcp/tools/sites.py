@@ -37,7 +37,12 @@ def register_site_tools(server: MCPServer, client: UniFiClient, settings: Settin
         return payload
 
     server.add_tool(
-        wrap_tool("list_sites", settings.max_tool_response_bytes, list_sites),
+        wrap_tool(
+            "list_sites",
+            settings.max_tool_response_bytes,
+            list_sites,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_sites",
         title="List Sites",
         description=DESCRIPTION,

@@ -503,21 +503,36 @@ def register_client_tools(server: MCPServer, client: UniFiClient, settings: Sett
         )
 
     server.add_tool(
-        wrap_tool("list_clients", settings.max_tool_response_bytes, list_clients),
+        wrap_tool(
+            "list_clients",
+            settings.max_tool_response_bytes,
+            list_clients,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_clients",
         title="List Clients",
         description=LIST_CLIENTS_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_client", settings.max_tool_response_bytes, get_client),
+        wrap_tool(
+            "get_client",
+            settings.max_tool_response_bytes,
+            get_client,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_client",
         title="Get Client",
         description=GET_CLIENT_DESCRIPTION,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("inspect_client_path", settings.max_tool_response_bytes, inspect_client_path),
+        wrap_tool(
+            "inspect_client_path",
+            settings.max_tool_response_bytes,
+            inspect_client_path,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="inspect_client_path",
         title="Inspect Client Path",
         description=INSPECT_CLIENT_PATH_DESCRIPTION,

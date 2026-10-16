@@ -28,13 +28,14 @@ async def verify_expected_state(
     expected_state_hash: str,
     *,
     resource: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fetch the current object and check it against *expected_state_hash*.
 
-    Returns the *raw* (pre-normalization) current object: the write path
-    must build its PUT body from the raw form, because the UniFi update
-    DTOs are full-replace and can round-trip secret fields (e.g. the WiFi
-    PSK) — those stay inside this process and are never shown to the LLM.
+    Returns ``(raw, normalized)`` where *raw* is the pre-normalization object
+    (the write path must build its PUT body from this, because the UniFi
+    update DTOs are full-replace and can round-trip secret fields — those stay
+    inside this process and are never shown to the LLM) and *normalized* is the
+    ``detail``-level normalized view (the form the hash is computed over).
 
     Raises :class:`StateMismatchError` (carrying the current hash) when the
     object changed since the caller read it.
@@ -44,7 +45,7 @@ async def verify_expected_state(
     current = compute_state_hash(normalized)
     if not hmac.compare_digest(current, expected_state_hash):
         raise StateMismatchError(resource=resource, current_state_hash=current)
-    return cast(dict[str, Any], raw)
+    return cast(dict[str, Any], raw), normalized
 
 
 def assert_user_defined(raw: Any, *, resource: str) -> None:

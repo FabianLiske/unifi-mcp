@@ -41,12 +41,15 @@ def _widget(**overrides: object) -> dict[str, Any]:
 async def test_verify_expected_state_ok_returns_raw() -> None:
     raw = _widget()
     stub = _StubClient(raw)
-    result = await verify_expected_state(
+    raw_result, normalized = await verify_expected_state(
         stub, "/sites/s/widgets/widget-1", compute_state_hash(raw), resource="widget"
     )
-    # returns the RAW (pre-normalization) object: it still carries metadata.
-    assert result == raw
-    assert "metadata" in result
+    # returns the RAW (pre-normalization) object: it still carries metadata,
+    # plus the normalized view (the form the state hash is computed over).
+    assert raw_result == raw
+    assert "metadata" in raw_result
+    assert "metadata" not in normalized
+    assert compute_state_hash(normalized) == compute_state_hash(raw)
     assert stub.get_calls == ["/sites/s/widgets/widget-1"]
 
 

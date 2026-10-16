@@ -97,6 +97,7 @@ def register_traffic_tools(server: MCPServer, client: UniFiClient, settings: Set
             "list_traffic_matching_lists",
             settings.max_tool_response_bytes,
             list_traffic_matching_lists,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="list_traffic_matching_lists",
         title="List Traffic Matching Lists",
@@ -105,7 +106,10 @@ def register_traffic_tools(server: MCPServer, client: UniFiClient, settings: Set
     )
     server.add_tool(
         wrap_tool(
-            "get_traffic_matching_list", settings.max_tool_response_bytes, get_traffic_matching_list
+            "get_traffic_matching_list",
+            settings.max_tool_response_bytes,
+            get_traffic_matching_list,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
         ),
         name="get_traffic_matching_list",
         title="Get Traffic Matching List",

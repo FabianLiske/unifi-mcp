@@ -71,5 +71,49 @@ class UniFiUnavailableError(UniFiError):
     """5xx, connection failure, or timeout: the gateway is unreachable."""
 
 
+class UniFiTransportTimeoutError(UniFiUnavailableError):
+    """A *write* request (PUT/POST) failed in the transport layer.
+
+    Distinct from :class:`UniFiUnavailableError` for a 5xx (where the gateway
+    answered and rejected, so the request provably did not execute): a
+    transport failure on a mutating request means the request *may have
+    executed* server-side — the bytes were sent but the response timed out or
+    the connection dropped. The outcome is therefore ambiguous and must be
+    resolved by a fresh re-read (design §44), never by a blind retry.
+    """
+
+
 class UniFiResponseTooLargeError(UniFiError):
     """The raw API response exceeded the configured size cap."""
+
+
+class UniFiPoolTimeoutError(UniFiError):
+    """The connection pool was saturated (bounded pool wait exceeded).
+
+    A pool timeout means too many in-flight gateway requests: the request
+    never got a connection within ``unifi_pool_timeout_seconds``. Distinct
+    from :class:`UniFiUnavailableError` (the gateway was unreachable) — the
+    gateway may be fine, but this client is at its concurrency limit.
+    """
+
+
+class UniFiToolBudgetError(UniFiError):
+    """A tool call ran out of its wall-clock budget before finishing.
+
+    Distinct from :class:`UniFiUnavailableError` (the gateway was
+    unreachable): here the gateway may be fine, but the *call* would not
+    finish inside its per-tool-call budget, so it reports a structured
+    error instead of risking the external MCP/LiteLLM deadline tripping
+    mid-retry (F05).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        api_code: str | None = None,
+        headroom_seconds: float | None = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code, api_code=api_code)
+        self.headroom_seconds = headroom_seconds

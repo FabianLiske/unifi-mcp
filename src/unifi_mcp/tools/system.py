@@ -45,7 +45,12 @@ def register_system_tools(server: MCPServer, client: UniFiClient, settings: Sett
         }
 
     server.add_tool(
-        wrap_tool("get_system_info", settings.max_tool_response_bytes, get_system_info),
+        wrap_tool(
+            "get_system_info",
+            settings.max_tool_response_bytes,
+            get_system_info,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_system_info",
         title="System Info",
         description=DESCRIPTION,

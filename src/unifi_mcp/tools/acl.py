@@ -200,21 +200,36 @@ def register_acl_tools(server: MCPServer, client: UniFiClient, settings: Setting
         return {"ordered_rule_ids": [rule_id for rule_id in ordered if isinstance(rule_id, str)]}
 
     server.add_tool(
-        wrap_tool("list_acl_rules", settings.max_tool_response_bytes, list_acl_rules),
+        wrap_tool(
+            "list_acl_rules",
+            settings.max_tool_response_bytes,
+            list_acl_rules,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="list_acl_rules",
         title="List ACL Rules",
         description=DESCRIPTION_LIST,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_acl_rule", settings.max_tool_response_bytes, get_acl_rule),
+        wrap_tool(
+            "get_acl_rule",
+            settings.max_tool_response_bytes,
+            get_acl_rule,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_acl_rule",
         title="Get ACL Rule",
         description=DESCRIPTION_GET,
         annotations=ToolAnnotations(read_only_hint=True),
     )
     server.add_tool(
-        wrap_tool("get_acl_rule_ordering", settings.max_tool_response_bytes, get_acl_rule_ordering),
+        wrap_tool(
+            "get_acl_rule_ordering",
+            settings.max_tool_response_bytes,
+            get_acl_rule_ordering,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="get_acl_rule_ordering",
         title="Get ACL Rule Ordering",
         description=DESCRIPTION_ORDERING,
@@ -255,7 +270,13 @@ def register_acl_write_tools(server: MCPServer, client: UniFiClient, settings: S
             raise NotFoundError(resource="acl_rule", query=rule_id) from None
 
     server.add_tool(
-        wrap_tool("update_acl_rule", settings.max_tool_response_bytes, update_acl_rule, write=True),
+        wrap_tool(
+            "update_acl_rule",
+            settings.max_tool_response_bytes,
+            update_acl_rule,
+            write=True,
+            budget_seconds=settings.unifi_tool_call_budget_seconds,
+        ),
         name="update_acl_rule",
         title="Update ACL Rule",
         description=DESCRIPTION_UPDATE,

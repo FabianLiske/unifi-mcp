@@ -18,18 +18,25 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from unifi_mcp import budget as _budget
 from unifi_mcp.observability.logging import get_logger
 from unifi_mcp.observability.metrics import record_mcp_request, record_write_request
 from unifi_mcp.safety.state_hash import compute_state_hash
-from unifi_mcp.tools.errors import NotFoundError, ToolError, check_response_size
+from unifi_mcp.tools.errors import (
+    NotFoundError,
+    ToolError,
+    check_response_size,
+)
 from unifi_mcp.unifi.errors import (
     UniFiAuthenticationError,
     UniFiAuthorizationError,
     UniFiConflictError,
     UniFiError,
     UniFiNotFoundError,
+    UniFiPoolTimeoutError,
     UniFiRateLimitError,
     UniFiResponseTooLargeError,
+    UniFiToolBudgetError,
     UniFiUnavailableError,
     UniFiValidationError,
 )
@@ -62,26 +69,43 @@ _ERROR_CODE_BY_TYPE: tuple[tuple[type[UniFiError], str], ...] = (
     (UniFiRateLimitError, "rate_limited"),
     (UniFiConflictError, "conflict"),
     (UniFiResponseTooLargeError, "response_too_large"),
+    (UniFiToolBudgetError, "budget_exhausted"),
+    (UniFiPoolTimeoutError, "pool_saturated"),
     (UniFiUnavailableError, "unavailable"),
 )
 
 
-def wrap_tool(name: str, max_response_bytes: int, fn: ToolFn, *, write: bool = False) -> ToolFn:
+def wrap_tool(
+    name: str,
+    max_response_bytes: int,
+    fn: ToolFn,
+    *,
+    write: bool = False,
+    budget_seconds: float | None = None,
+) -> ToolFn:
     """Wrap a tool implementation with metrics, size cap, and error mapping.
 
     ``functools.wraps`` keeps *fn*'s signature so the MCP SDK still derives
     the tool's input schema from its typed parameters. Pass ``write=True``
     for mutating tools so they are additionally recorded via
     ``record_write_request`` (design §28 ``unifi_mcp_write_requests_total``).
+
+    ``budget_seconds`` is the per-tool-call UniFi wall-clock budget (design
+    §44); the client enforces it for the duration of the call so a tool call
+    that fans out into several sequential gateway requests still completes and
+    reports before the external LiteLLM/MCP client deadline. When omitted the
+    process-wide default is used.
     """
+    budget = budget_seconds if budget_seconds is not None else _default_tool_budget()
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
         started = time.monotonic()
         status = "ok"
         try:
-            payload = await fn(*args, **kwargs)
-            check_response_size(payload, max_bytes=max_response_bytes)
+            with _budget.tool_call_budget(budget):
+                payload = await fn(*args, **kwargs)
+                check_response_size(payload, max_bytes=max_response_bytes)
         except ToolError as exc:
             payload = exc.to_dict()
             status = exc.code
@@ -98,6 +122,21 @@ def wrap_tool(name: str, max_response_bytes: int, fn: ToolFn, *, write: bool = F
         return payload
 
     return wrapper
+
+
+def _default_tool_budget() -> float:
+    """Per-tool-call budget when the caller did not pass one.
+
+    The register functions normally pass ``settings.unifi_tool_call_budget_seconds``;
+    this fallback keeps ``wrap_tool`` usable in isolation. It is the *internal*
+    budget default (:data:`unifi_mcp.config.DEFAULT_TOOL_CALL_BUDGET_SECONDS`,
+    45 s) — strictly below the 60 s external MCP/LiteLLM deadline — not the
+    external deadline itself: the whole point of the budget is to leave headroom
+    under that deadline.
+    """
+    from unifi_mcp.config import DEFAULT_TOOL_CALL_BUDGET_SECONDS
+
+    return DEFAULT_TOOL_CALL_BUDGET_SECONDS
 
 
 def unifi_error_to_dict(exc: UniFiError) -> dict[str, Any]:
